@@ -275,9 +275,20 @@ async function nextQ(){
 async function confirm_(){
   S.stage = "s3";
   const a = S.ans;
+  /* 🔴 分支专属字段必须进复述卡。原版只带 A 的 block，B/C/D 答的"想解决/体量/场景"全不显示
+     ⇒ 用户看到一张缺了自己答案的卡片，只能凭印象点"对"，确认这一步就白做了。 */
+  const detail = [];
+  if(a.scale) detail.push(a.scale);
+  if(a.role)  detail.push(a.role);
+  if(a.scene) detail.push(a.scene);
+  if(a.want)  detail.push(a.want);
+  if(a.block) detail.push("卡在「" + a.block + "」");
+  if(a.url)   detail.push(a.url);
+  if(a.now)   detail.push("现用 " + a.now);
   const rows = [
     ["称呼", a.name], ["平台 / 品类", (a.plat||"") + " / " + (a.cat||"")],
-    ["需求", BRANCH_NAME[S.branch] + (a.block ? "，卡在「" + a.block + "」" : "")],
+    ["需求", BRANCH_NAME[S.branch]],
+    ["情况", detail.join(" · ")],
     ["联系方式", a.ct]
   ].filter(r=>r[1]);
   await typing(500);
