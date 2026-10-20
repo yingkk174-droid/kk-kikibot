@@ -239,7 +239,7 @@ async function s0(){
   S.stage = "s1";
   options(["A 链接诊断","B 课程试听","C AI Agent 体验","D 咨询预约"], pickBranch,
           "也可以直接在下面用一句话说你的情况");
-  askText("或直接说一句你的情况", v=>{
+  askText("说一句你的情况", v=>{
     const hit = RULES.find(r=>r[0].test(v));
     if(hit){ pickBranch(hit[1]); }
     else { say("你说的我大概归到 <b>链接诊断</b>，如果不对你可以直接说「不对」，我再换一个。", false); pickBranch("A"); }
