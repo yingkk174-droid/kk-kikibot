@@ -137,7 +137,14 @@ const LINKS = {
   C: "",   // AI Agent 体验名额
   D: ""    // 咨询预约（留电话等回联）
 };
-const WEBHOOK = "";   // 例："https://your-api/lead"（POST JSON）。留空则只出摘要，不静默丢数据。
+/* 线索自动上报地址。留空则只出「复制我的信息」，不静默丢数据。
+   ✅ 可直接填的三类（都不需要 app_id / app_secret，一条 URL 就够）：
+      ① 飞书群「自定义机器人」webhook   → 线索直接推群里，text 已拼好
+      ② 飞书多维表「自动化 · 收到 webhook 请求」→ 触发写记录
+      ③ 自建端点（CF Worker / Vercel Function）→ 需在服务端读 raw body 再 JSON.parse
+   🔴 发送一律走 text/plain simple request（无 CORS 预检）：
+      飞书 webhook 不返回 CORS 头，若发 application/json，OPTIONS 预检被拒 → 线索根本没送到。 */
+const WEBHOOK = "";
 
 /* 渠道：短链 /kb1 /kb2 … 落到这个参数，进 CRM 用于区分投放渠道 */
 const CH = new URLSearchParams(location.search).get("c") || "";
@@ -363,15 +370,33 @@ async function deliver(){
 }
 
 function payload(){
+  const a = S.ans;
   return {
+    /* 结构化字段：给多维表 / CRM 类接收端 */
     channel: CH, branch: S.branch, branch_name: BRANCH_NAME[S.branch],
-    intent: (S.branch === "D" && /(亿级|千万级)/.test(S.ans.scale || "")) ? "high" : "normal",
-    ans: S.ans, ts: new Date().toISOString(), ua: navigator.userAgent
+    intent: (S.branch === "D" && /(亿级|千万级)/.test(a.scale || "")) ? "high" : "normal",
+    name: a.name, plat: a.plat, cat: a.cat, contact: a.ct,
+    scale: a.scale, stage: a.stage, block: a.block, role: a.role, want: a.want,
+    ts: new Date().toISOString(), ua: navigator.userAgent,
+    /* 飞书自定义机器人字段：直接推群里就能看，多余的字段接收端自行忽略 */
+    msg_type: "text",
+    content: { text: summary() }
   };
 }
 function send(){
   if(!WEBHOOK) return;   /* 未配置后端：只出摘要 + 申请链接，不静默丢数据 */
-  fetch(WEBHOOK, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload())}).catch(()=>{});
+  /* 🔴 直连飞书 / 企微 webhook 没有 CORS 头：
+     若用 application/json，浏览器会先发 OPTIONS 预检 → 被拒 → 请求根本没到服务端，线索静默丢失。
+     ⇒ 统一走 simple request（text/plain，无预检），牺牲响应换取"一定能送到"。
+       自建端点（有 CORS）同样收得到，读 raw body 解析即可。 */
+  const body = JSON.stringify(payload());
+  try{
+    if(navigator.sendBeacon && navigator.sendBeacon(WEBHOOK, new Blob([body], {type:"text/plain;charset=UTF-8"}))){
+      return;   /* sendBeacon：页面关掉也能发，且不触发预检 */
+    }
+  }catch(e){}
+  fetch(WEBHOOK, {method:"POST", mode:"no-cors", keepalive:true,
+                  headers:{"Content-Type":"text/plain;charset=UTF-8"}, body}).catch(()=>{});
 }
 function summary(){
   const a = S.ans;
