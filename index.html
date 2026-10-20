@@ -129,16 +129,21 @@ header{
       填上后端地址才会自动回传。⛔ 不要在前端硬编码任何密钥。
    3. 渠道不用 ?utm_source=（会把短链撑长），用短链路径区分，见 README。
    ========================================================================= */
+/* 🔴 留空 = S4 只出「复制我的信息」，不出外跳按钮。
+   ⛔ 绝不允许填占位串：一个点开是 404 的"申请按钮"比没有按钮更伤信任。 */
 const LINKS = {
-  A: "https://wj.qq.com/s2/PLACEHOLDER_A",   // 链接诊断申请表
-  B: "https://wj.qq.com/s2/PLACEHOLDER_B",   // 课程试听
-  C: "https://wj.qq.com/s2/PLACEHOLDER_C",   // AI Agent 体验名额
-  D: "https://wj.qq.com/s2/PLACEHOLDER_D"    // 咨询预约（留电话等回联）
+  A: "",   // 链接诊断申请表
+  B: "",   // 课程试听
+  C: "",   // AI Agent 体验名额
+  D: ""    // 咨询预约（留电话等回联）
 };
-const WEBHOOK = "";   // 例："https://your-api/lead"（POST JSON）。留空则只出摘要+链接。
+const WEBHOOK = "";   // 例："https://your-api/lead"（POST JSON）。留空则只出摘要，不静默丢数据。
 
 /* 渠道：短链 /kb1 /kb2 … 落到这个参数，进 CRM 用于区分投放渠道 */
 const CH = new URLSearchParams(location.search).get("c") || "";
+/* 深链：?b=A|C|D 直达对应分支。渠道页/朋友圈文案里可以直说"点这里预约咨询"，
+   ⛔ 但海报二维码**不加 b**——扫码的人还没被问过，替他选分支就是替他猜需求。 */
+const PRE = (new URLSearchParams(location.search).get("b") || "").toUpperCase();
 
 /* ---------- 题库 ---------- */
 /* 通用 4 项：顺序不能动。联系方式必须放最后 —— 先给价值再要联系方式，配合度明显更高。 */
@@ -227,6 +232,10 @@ function toast(msg){
 async function s0(){
   await typing(500);
   say("你好，我是 <b>Kiki-Bot</b>，KK 团队的 AI 顾问 👋<br>我可以帮你对接四件事：链接诊断、课程试听、自研 AI Agent 体验名额、咨询预约。<br>大概 30 秒问清情况，我就把对应的申请入口发给你。过程中不会向第三方泄露你的信息。<br><br>先问一下：你现在最想解决的是哪一类？");
+  if(PRE && BRANCH_NAME[PRE]){          /* 深链直达分支，省掉一次选择 */
+    setTimeout(()=>{ say(`你要的是 <b>${BRANCH_NAME[PRE]}</b> 对吧？直接开始 👇`, true); pickBranch(PRE); }, 320);
+    return;
+  }
   S.stage = "s1";
   options(["A 链接诊断","B 课程试听","C AI Agent 体验","D 咨询预约"], pickBranch,
           "也可以直接在下面用一句话说你的情况");
@@ -319,8 +328,9 @@ async function deliver(){
 
   const box = document.createElement("div"); box.className = "row";
   const d = document.createElement("div"); d.className = "done"; d.style.flex = "1"; d.style.maxWidth = "82%";
-  d.innerHTML = `<a class="btn" href="${link}" target="_blank" rel="noopener">填写申请 · ${BRANCH_NAME[b]}</a>
-                 <button class="btn ghost" id="cp">复制我的信息</button>`;
+  /* ⛔ 没有真链接就不渲染这个按钮（LINKS 为空时 link 为 undefined）——死链比没按钮更伤信任 */
+  d.innerHTML = (link ? `<a class="btn" href="${link}" target="_blank" rel="noopener">填写申请 · ${BRANCH_NAME[b]}</a>` : "")
+              + `<button class="btn ghost" id="cp">复制我的信息</button>`;
   box.appendChild(d); chat.appendChild(box); scroll();
 
   d.querySelector("#cp").onclick = ()=>{ copy(summary()); toast("已复制，可直接发给顾问"); };
