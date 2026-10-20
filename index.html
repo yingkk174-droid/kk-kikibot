@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#F7F5F0">
+<title>KK · 跨境电商增长顾问</title>
+<style>
+:root{
+  --bg:#F7F5F0; --card:#FFFFFF; --line:#E6E1D7; --ink:#181B1F; --sub:#6A717A;
+  --accent:#85631E; --accent-bg:#F3ECDC; --user:#181B1F; --ok:#1F7A4D;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font:16px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  display:flex; justify-content:center;
+}
+.wrap{width:100%; max-width:520px; min-height:100vh; display:flex; flex-direction:column}
+header{
+  position:sticky; top:0; z-index:5; background:rgba(247,245,240,.94);
+  backdrop-filter:saturate(160%) blur(10px); border-bottom:1px solid var(--line);
+  padding:12px 18px calc(12px + env(safe-area-inset-top)*0);
+}
+.hd{display:flex; align-items:center; gap:10px}
+.logo{
+  width:34px;height:34px;border-radius:10px;background:var(--ink);color:#C6A356;
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;letter-spacing:.5px;flex:none
+}
+.hd .n{font-weight:700;font-size:16px;letter-spacing:.3px}
+.hd .n small{font-weight:400;color:var(--sub);font-size:12px;margin-left:6px;letter-spacing:0}
+.hd .r{font-size:12px;color:var(--sub);margin-top:1px}
+
+#chat{flex:1; overflow-y:auto; padding:18px 16px 8px; display:flex; flex-direction:column; gap:10px}
+.row{display:flex}
+.row.me{justify-content:flex-end}
+.bub{
+  max-width:82%; padding:10px 14px; border-radius:16px; font-size:15px; white-space:pre-wrap; word-break:break-word;
+  background:var(--card); border:1px solid var(--line); border-bottom-left-radius:6px;
+  box-shadow:0 1px 2px rgba(24,27,31,.04);
+}
+.row.me .bub{background:var(--user); color:#fff; border-color:var(--user); border-bottom-left-radius:16px; border-bottom-right-radius:6px}
+.bub b{color:var(--accent); font-weight:600}
+.row.me .bub b{color:#D8BE82}
+.typing{display:inline-flex;gap:4px;align-items:center;height:20px}
+.typing i{width:6px;height:6px;border-radius:50%;background:#C3BCAF;animation:t 1.2s infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes t{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+
+.card{
+  background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px;
+  font-size:14px; color:var(--sub); box-shadow:0 1px 2px rgba(24,27,31,.04);
+}
+.card .t{font-weight:600;color:var(--ink);font-size:15px;margin-bottom:8px}
+.card .kv{display:flex;gap:8px;padding:3px 0}
+.card .kv .k{color:var(--sub);flex:none;width:74px}
+.card .kv .v{color:var(--ink);word-break:break-all}
+
+#bar{
+  border-top:1px solid var(--line); background:rgba(247,245,240,.96);
+  backdrop-filter:blur(10px); padding:10px 14px calc(10px + env(safe-area-inset-bottom));
+  display:flex; flex-direction:column; gap:8px;
+}
+.opts{display:flex; flex-direction:column; gap:8px}
+.opt{
+  width:100%; text-align:left; border:1px solid var(--line); background:var(--card); color:var(--ink);
+  border-radius:12px; padding:11px 14px; font-size:15px; cursor:pointer; font-family:inherit;
+  transition:border-color .15s,background .15s;
+}
+.opt:active{background:var(--accent-bg);border-color:var(--accent)}
+.opt em{font-style:normal;color:var(--accent);font-weight:600;margin-right:8px}
+.inrow{display:flex; gap:8px}
+.inrow input{
+  flex:1; border:1px solid var(--line); background:var(--card); border-radius:12px; padding:11px 14px;
+  font-size:16px; color:var(--ink); font-family:inherit; outline:none; min-width:0;
+}
+.inrow input:focus{border-color:var(--accent)}
+.inrow button{
+  border:none; background:var(--ink); color:#fff; border-radius:12px; padding:0 18px; font-size:15px;
+  cursor:pointer; font-family:inherit; flex:none;
+}
+.inrow button:disabled{opacity:.35}
+.hint{font-size:12px;color:var(--sub);text-align:center;padding:2px 0 0}
+
+.btn{
+  display:block; text-align:center; text-decoration:none; background:var(--accent); color:#fff;
+  border-radius:12px; padding:13px 16px; font-size:16px; font-weight:600;
+}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.foot{font-size:12px;color:var(--sub);text-align:center;padding:10px 16px 6px;line-height:1.7}
+.foot a{color:var(--sub)}
+.done{display:flex;flex-direction:column;gap:10px}
+.toast{
+  position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(24,27,31,.92);color:#fff;
+  padding:10px 18px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:9
+}
+.toast.on{opacity:1}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="hd">
+      <div class="logo">KK</div>
+      <div>
+        <div class="n">KK<small>洪宝森</small></div>
+        <div class="r">跨境电商增长顾问</div>
+      </div>
+    </div>
+  </header>
+
+  <div id="chat"></div>
+
+  <div id="bar"></div>
+  <div class="foot">
+    信息仅用于本次对接，不会提供给第三方 · <a href="tel:">转人工</a>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================================
+   Kiki-Bot · 海报二维码入口
+   ⛔ 修改前必读（2026-10-20 定）：
+   1. LINKS 四个链接必须分开（对应 A/B/C/D 四个需求分支）。
+      合成一个通用落地页 = 让用户白答一遍分支问题，且线索不带需求标签。
+   2. WEBHOOK 为空时，答案只在本地生成"可复制摘要" + 跳申请链接；
+      填上后端地址才会自动回传。⛔ 不要在前端硬编码任何密钥。
+   3. 渠道不用 ?utm_source=（会把短链撑长），用短链路径区分，见 README。
+   ========================================================================= */
+const LINKS = {
+  A: "https://wj.qq.com/s2/PLACEHOLDER_A",   // 链接诊断申请表
+  B: "https://wj.qq.com/s2/PLACEHOLDER_B",   // 课程试听
+  C: "https://wj.qq.com/s2/PLACEHOLDER_C",   // AI Agent 体验名额
+  D: "https://wj.qq.com/s2/PLACEHOLDER_D"    // 咨询预约（留电话等回联）
+};
+const WEBHOOK = "";   // 例："https://your-api/lead"（POST JSON）。留空则只出摘要+链接。
+
+/* 渠道：短链 /kb1 /kb2 … 落到这个参数，进 CRM 用于区分投放渠道 */
+const CH = new URLSearchParams(location.search).get("c") || "";
+
+/* ---------- 题库 ---------- */
+/* 通用 4 项：顺序不能动。联系方式必须放最后 —— 先给价值再要联系方式，配合度明显更高。 */
+const GEN = [
+  {k:"name", t:"怎么称呼你？", type:"text", ph:"张总 / 李经理"},
+  {k:"plat", t:"主要做哪个平台？", type:"opt", opt:["亚马逊","TikTok","独立站","其他"]},
+  {k:"cat",  t:"主要做什么品类？写一行就行。", type:"text", ph:"家居 / 女装 / 3C 配件…"},
+  {k:"ct",   t:"留个微信或手机，我把链接和后续安排发给你。", type:"text", ph:"微信号或手机号"}
+];
+/* 分支专属 2 项 */
+const EXT = {
+  A: [{k:"url",   t:"方便把链接发我吗？（店铺或商品页都行，没有可以写「暂无」）", type:"text", ph:"https:// 或 暂无"},
+      {k:"block", t:"你觉得现在卡在哪？", type:"opt", opt:["没曝光","有点击没转化","有单不稳定","说不清"]}],
+  B: [{k:"role",  t:"你的角色是？", type:"opt", opt:["老板","运营负责人","一线运营","其他"]},
+      {k:"want",  t:"现在最想先解决哪一块？", type:"text", ph:"比如：广告投放 / 团队带人 / 选品"}],
+  C: [{k:"scene", t:"你最想让它先跑哪一块？", type:"opt", opt:["选品","Listing","投放","复盘"]},
+      {k:"now",   t:"现在主要靠什么工具或人工做？", type:"text", ph:"比如：表格 + 两个人"}],
+  D: [{k:"scale", t:"你们现在大概什么体量？", type:"opt", opt:["亿级以上","千万级","百万级","刚起步 / 说不清"]},
+      {k:"want",  t:"最想解决的是哪一块？", type:"text", ph:"比如：品牌份额 / 组织 / 利润"]}
+};
+const BRANCH_NAME = {A:"链接诊断", B:"课程试听", C:"AI Agent 体验", D:"咨询预约"};
+const RULES = [
+  [/链接|Listing|listing|曝光|点击|转化|排名|广告|ACOS|acos|不出单|卡/, "A"],
+  [/课程|课件|试听|听一下|学|培训|上课|共创|营/, "B"],
+  [/Agent|agent|机器人|自动化|选品|投放|复盘|工具|AI|ai/, "C"],
+  [/咨询|陪跑|顾问|定制|怎么干|约|见面|聊聊|方案/, "D"]
+];
+
+/* ---------- 状态 ---------- */
+const S = {branch:null, queue:[], i:0, ans:{}, stage:"s0"};
+const chat = document.getElementById("chat");
+const bar  = document.getElementById("bar");
+const KEY  = "kikibot_ans";
+
+/* ---------- 渲染 ---------- */
+function scroll(){ requestAnimationFrame(()=>chat.scrollTop = chat.scrollHeight); }
+function say(html, me){
+  const row = document.createElement("div");
+  row.className = "row" + (me ? " me" : "");
+  const b = document.createElement("div");
+  b.className = "bub"; b.innerHTML = html;
+  row.appendChild(b); chat.appendChild(row); scroll();
+}
+function card(html){
+  const row = document.createElement("div"); row.className = "row";
+  const c = document.createElement("div"); c.className = "card"; c.innerHTML = html;
+  row.appendChild(c); chat.appendChild(row); scroll();
+}
+function typing(ms){
+  const row = document.createElement("div"); row.className = "row";
+  const b = document.createElement("div"); b.className = "bub";
+  b.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
+  row.appendChild(b); chat.appendChild(row); scroll();
+  return new Promise(r=>setTimeout(()=>{row.remove(); r();}, ms));
+}
+function clearBar(){ bar.innerHTML = ""; }
+function options(list, onPick, hint){
+  const w = document.createElement("div"); w.className = "opts";
+  list.forEach(txt=>{
+    const b = document.createElement("button"); b.className = "opt";
+    const m = txt.match(/^([A-D])\s+(.*)$/);
+    b.innerHTML = m ? `<em>${m[1]}</em>${m[2]}` : txt;
+    b.onclick = ()=>{ say(txt.replace(/^[A-D]\s+/, ""), true); onPick(txt); };
+    w.appendChild(b);
+  });
+  bar.appendChild(w);
+  if(hint){ const h = document.createElement("div"); h.className = "hint"; h.textContent = hint; bar.appendChild(h); }
+}
+function askText(ph, onSend){
+  const r = document.createElement("div"); r.className = "inrow";
+  const i = document.createElement("input"); i.placeholder = ph || "输入…"; i.autocomplete = "off";
+  const b = document.createElement("button"); b.textContent = "发送"; b.disabled = true;
+  i.oninput = ()=>{ b.disabled = !i.value.trim(); };
+  const go = ()=>{ const v = i.value.trim(); if(!v) return; say(v, true); clearBar(); onSend(v); };
+  b.onclick = go;
+  i.onkeydown = e=>{ if(e.key === "Enter") go(); };
+  r.appendChild(i); r.appendChild(b); bar.appendChild(r);
+  setTimeout(()=>i.focus(), 60);
+}
+function toast(msg){
+  const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("on");
+  setTimeout(()=>t.classList.remove("on"), 1500);
+}
+
+/* ---------- 流程 ---------- */
+async function s0(){
+  await typing(500);
+  say("你好，我是 <b>Kiki-Bot</b>，KK 团队的 AI 顾问 👋<br>我可以帮你对接四件事：链接诊断、课程试听、自研 AI Agent 体验名额、咨询预约。<br>大概 30 秒问清情况，我就把对应的申请入口发给你。过程中不会向第三方泄露你的信息。<br><br>先问一下：你现在最想解决的是哪一类？");
+  S.stage = "s1";
+  options(["A 链接诊断","B 课程试听","C AI Agent 体验","D 咨询预约"], pickBranch,
+          "也可以直接在下面用一句话说你的情况");
+  askText("或直接说一句你的情况", v=>{
+    const hit = RULES.find(r=>r[0].test(v));
+    if(hit){ pickBranch(hit[1]); }
+    else { say("你说的我大概归到 <b>链接诊断</b>，如果不对你可以直接说「不对」，我再换一个。", false); pickBranch("A"); }
+  });
+}
+
+/* S1 需求识别：命中即进分支；"不对"回退一次 */
+function pickBranch(code){
+  const c = (code || "").trim().charAt(0).toUpperCase();
+  if(!BRANCH_NAME[c]) return;
+  S.branch = c; S.stage = "s2";
+  S.queue = GEN.concat(EXT[c]);
+  S.i = 0;
+  clearBar();
+  setTimeout(nextQ, 380);
+}
+
+/* S2 收集 */
+async function nextQ(){
+  if(S.i >= S.queue.length){ return confirm_(); }
+  const q = S.queue[S.i];
+  await typing(420);
+  say(q.t);
+  S.stage = "s2";
+  if(q.type === "opt"){
+    options(q.opt, v=>{ S.ans[q.k] = v; S.i++; clearBar(); setTimeout(nextQ, 300); });
+  }else{
+    askText(q.ph || "输入…", v=>{ S.ans[q.k] = v; S.i++; setTimeout(nextQ, 300); });
+  }
+}
+
+/* S3 复述确认 */
+async function confirm_(){
+  S.stage = "s3";
+  const a = S.ans;
+  const rows = [
+    ["称呼", a.name], ["平台 / 品类", (a.plat||"") + " / " + (a.cat||"")],
+    ["需求", BRANCH_NAME[S.branch] + (a.block ? "，卡在「" + a.block + "」" : "")],
+    ["联系方式", a.ct]
+  ].filter(r=>r[1]);
+  await typing(500);
+  say("我记一下，你看对不对：");
+  card(rows.map(r=>`<div class="kv"><div class="k">${r[0]}</div><div class="v">${esc(r[1])}</div></div>`).join(""));
+  await typing(300);
+  say("回复「对」我就把申请链接发你；哪里不对直接说，我改。");
+  options(["对，没问题","不对，我要改"], async v=>{
+    clearBar();
+    if(v.startsWith("对")) return deliver();
+    S.i = 0; S.queue = GEN.concat(EXT[S.branch]);
+    await typing(300);
+    say("好的，重新来一遍 👌");
+    setTimeout(nextQ, 300);
+  });
+  askText("要改哪里？直接写", async v=>{
+    S.i = 0; S.queue = GEN.concat(EXT[S.branch]);
+    await typing(300); say("收到，重新问一遍 👌"); setTimeout(nextQ, 300);
+  });
+}
+
+/* S4 交付 */
+async function deliver(){
+  S.stage = "s4";
+  clearBar();
+  const a = S.ans, b = S.branch;
+  await typing(600);
+
+  /* ⭐ D（咨询预约）体量判定：判据是产能，不是"值不值得服务"。
+     ⛔ 任何一档都不能出现"你不符合条件" —— 那等于当众否定，也掐掉一条能养的线索。 */
+  let link = LINKS[b], note = "", hi = "";
+  if(b === "D"){
+    const sc = a.scale || "";
+    if(sc === "亿级以上" || sc === "千万级"){
+      hi = "high"; note = "已按高意向登记，同学会优先排期。";
+    }else if(sc === "百万级"){
+      note = "先把你的情况过一遍，如果更适合先上课我会直说。";
+    }else if(sc === "刚起步 / 说不清"){
+      link = LINKS.B;
+      note = "这个阶段先把打法和口径理顺，比定制陪跑划算 —— 课程试听入口先给你，同时我也把你的咨询意向登记下来了。";
+    }
+    /* ⭐ 用户 2026-10-20 拍板：D = 留电话等回联（不做选时段，排期走人工） */
+    note += "我们会在 1 个工作日内电话联系你（工作日 10:00–19:00）。";
+  }
+
+  say(`✅ 申请入口：<b>${BRANCH_NAME[b]}</b>`);
+  if(note) say(note);
+
+  const box = document.createElement("div"); box.className = "row";
+  const d = document.createElement("div"); d.className = "done"; d.style.flex = "1"; d.style.maxWidth = "82%";
+  d.innerHTML = `<a class="btn" href="${link}" target="_blank" rel="noopener">填写申请 · ${BRANCH_NAME[b]}</a>
+                 <button class="btn ghost" id="cp">复制我的信息</button>`;
+  box.appendChild(d); chat.appendChild(box); scroll();
+
+  d.querySelector("#cp").onclick = ()=>{ copy(summary()); toast("已复制，可直接发给顾问"); };
+
+  await typing(400);
+  say("提交后 1–2 个工作日内会有同学和你对接（诊断类会先要一次后台数据口径，不涉密）。<br>还有别的问题可以直接问我；要找人聊，回复「人工」我转过去。");
+
+  const f = document.createElement("div"); f.className = "hint";
+  f.innerHTML = '回复「人工」转人工 · <a href="tel:">直接打电话</a>';
+  bar.appendChild(f);
+
+  send();
+  window.__LEAD__ = payload();
+  try{ localStorage.setItem(KEY, JSON.stringify(window.__LEAD__)); }catch(e){}
+}
+
+function payload(){
+  return {
+    channel: CH, branch: S.branch, branch_name: BRANCH_NAME[S.branch],
+    intent: (S.branch === "D" && /(亿级|千万级)/.test(S.ans.scale || "")) ? "high" : "normal",
+    ans: S.ans, ts: new Date().toISOString(), ua: navigator.userAgent
+  };
+}
+function send(){
+  if(!WEBHOOK) return;   /* 未配置后端：只出摘要 + 申请链接，不静默丢数据 */
+  fetch(WEBHOOK, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload())}).catch(()=>{});
+}
+function summary(){
+  const a = S.ans;
+  return [
+    "【KK 团队 · 需求登记】",
+    "渠道：" + (CH || "海报扫码"),
+    "需求：" + BRANCH_NAME[S.branch],
+    "称呼：" + (a.name || "-"),
+    "平台 / 品类：" + (a.plat || "-") + " / " + (a.cat || "-"),
+    "联系方式：" + (a.ct || "-"),
+    S.branch === "A" ? "链接：" + (a.url || "-") + "\n卡点：" + (a.block || "-") :
+    S.branch === "B" ? "角色：" + (a.role || "-") + "\n想解决：" + (a.want || "-") :
+    S.branch === "C" ? "场景：" + (a.scene || "-") + "\n现用工具：" + (a.now || "-") :
+                       "体量：" + (a.scale || "-") + "\n想解决：" + (a.want || "-")
+  ].join("\n");
+}
+function copy(t){
+  if(navigator.clipboard && window.isSecureContext){ navigator.clipboard.writeText(t); return; }
+  const ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove();
+}
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+s0();
+</script>
+</body>
+</html>
