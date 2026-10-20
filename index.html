@@ -125,8 +125,9 @@ header{
    ⛔ 修改前必读（2026-10-20 定）：
    1. LINKS 四个链接必须分开（对应 A/B/C/D 四个需求分支）。
       合成一个通用落地页 = 让用户白答一遍分支问题，且线索不带需求标签。
-   2. WEBHOOK 为空时，答案只在本地生成"可复制摘要" + 跳申请链接；
-      填上后端地址才会自动回传。⛔ 不要在前端硬编码任何密钥。
+   2. 当前接收端 = 个人微信（SINK=pushplus）。token 为空时答案只在本地生成
+      "可复制摘要" + 跳申请链接；填上 token 才会自动推送。
+      ⛔ 不要在前端硬编码任何 app_secret（token 是推送地址，泄露只影响骚扰，可接受）。
    3. 渠道不用 ?utm_source=（会把短链撑长），用短链路径区分，见 README。
    ========================================================================= */
 /* 🔴 留空 = S4 只出「复制我的信息」，不出外跳按钮。
@@ -138,9 +139,11 @@ const LINKS = {
   D: ""    // 咨询预约（留电话等回联）
 };
 /* ---------- 线索自动上报（实测于 2026-10-20，改之前先看 §4.1 的 CORS 实测表） ---------- */
-const WEBHOOK = "";      // 接收地址，留空则只出「复制我的信息」，不静默丢数据
-const SINK    = "wecom"; // wecom | pushplus | feishu | raw  ← 换接收端只改这个，URL 与 body 格式自动跟着换
-const SINK_TOKEN = "";   // 仅 pushplus 需要（个人微信推送 token），其余留空
+const SINK    = "pushplus"; // wecom | pushplus | feishu | raw  ← 换接收端只改这个，地址与 body 格式自动跟着换
+const SINK_TOKEN = "";      // pushplus 的 token（32 位）。留空则只出「复制我的信息」，不静默丢数据
+/* pushplus / Server酱 端点是固定的，内置掉：省得手抄 URL 抄错一个字母，线索全送进黑洞。 */
+const PUSHPLUS_URL = "https://www.pushplus.plus/send";
+const WEBHOOK = "";         // 仅 wecom / feishu / raw 需要；pushplus 不用填（走内置端点）
 const MENTION_HIGH = false; // 仅 wecom：高意向线索（D 分支 + 亿级/千万级）在群里 @所有人
 
 /* 🔴 各接收端的差异不是"换 URL"，是"换协议"，别只改 URL 不改 SINK：
@@ -403,7 +406,8 @@ function payload(){
   return Object.assign(base, {ua: navigator.userAgent});   /* raw */
 }
 function send(){
-  if(!WEBHOOK) return;   /* 未配置则只出摘要 + 申请链接，不静默丢数据 */
+  const url = (SINK === "pushplus") ? PUSHPLUS_URL : WEBHOOK;
+  if(!url || (SINK === "pushplus" && !SINK_TOKEN)) return;   /* 未配置则只出摘要 + 申请链接，不静默丢数据 */
   const body = JSON.stringify(payload());
   /* 🔴 wecom 是唯一必须绕预检的：实测企微 OPTIONS 直接 403（nginx 层），
         一旦发 application/json 触发预检 → 请求根本没到业务层，线索静默丢失。
@@ -412,15 +416,15 @@ function send(){
      其余接收端（pushplus / feishu / raw）都有 CORS 头，正常发 JSON，还能拿到返回。 */
   if(SINK === "wecom"){
     try{
-      if(navigator.sendBeacon && navigator.sendBeacon(WEBHOOK, new Blob([body], {type:"text/plain;charset=UTF-8"}))){
+      if(navigator.sendBeacon && navigator.sendBeacon(url, new Blob([body], {type:"text/plain;charset=UTF-8"}))){
         return;   /* sendBeacon：关页面也能发，且不触发预检 */
       }
     }catch(e){}
-    fetch(WEBHOOK, {method:"POST", mode:"no-cors", keepalive:true,
+    fetch(url, {method:"POST", mode:"no-cors", keepalive:true,
                     headers:{"Content-Type":"text/plain;charset=UTF-8"}, body}).catch(()=>{});
     return;
   }
-  fetch(WEBHOOK, {method:"POST", keepalive:true,
+  fetch(url, {method:"POST", keepalive:true,
                   headers:{"Content-Type":"application/json"}, body}).catch(()=>{});
 }
 function summary(){
