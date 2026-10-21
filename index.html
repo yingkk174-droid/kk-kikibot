@@ -132,6 +132,13 @@ header{
    ========================================================================= */
 /* 🔴 留空 = S4 只出「复制我的信息」，不出外跳按钮。
    ⛔ 绝不允许填占位串：一个点开是 404 的"申请按钮"比没有按钮更伤信任。 */
+/* ⭐⭐ E 分支的两个 Agent（2026-10-20 定）：**两个系统按不同单位计量，⛔ 不能混成一个"额度"。**
+   产品设计按 token、跨境电商按次数 —— 说错单位等于承诺错东西，客户跑完后一定会来问。
+   🔴 额度与站点的唯一真源在这里；价格另在 PRICE.E（两个同价 19.9 / 个体验码）。 */
+const AGENT = {
+  "AI 产品设计": {site:"https://www.kumia.design",          quota:"10,000 token"},
+  "AI 跨境电商": {site:"https://kuajing-ai.up.railway.app", quota:"10 次"}
+};
 const LINKS = {
   A: "",   // 链接诊断申请表
   /* ⭐ B 按课题分（2026-10-20 定）：客户选的课题就是路由，四个课题各给一集试听。
@@ -140,7 +147,9 @@ const LINKS = {
   B: {运营:"", 经营:"", 战略:"", 品牌:""},
   C: "",   // 线下共创营（诚意金 500）
   D: "",   // 咨询预约（诚意金 1000，留电话等回联）
-  E: ""    // AI Agent 体验码发放页（19.9 / 个，1 个月内有效，带额度）
+  /* ⭐ E 跟 B 同构：客户选哪个系统，按钮就指到哪个系统（⛔ 直接 LINKS[b] 会拿到对象 ⇒ [object Object] 死链） */
+  E: {"AI 产品设计": AGENT["AI 产品设计"].site,
+      "AI 跨境电商": AGENT["AI 跨境电商"].site}
 };
 
 /* ⭐⭐ 价格口径（2026-10-20 定）：**⛔ 不赠免费体验，一律收体验价 / 诚意金**。
@@ -160,10 +169,9 @@ const PRICE = {
   /* ⭐ E 卖的是「体验码」不是「名额」（2026-10-20 定）：19.9 一个码，1 个月内有效，带额度上限。
      🔴 原价未定 ⇒ list 留空，气泡只写体验价。⛔ 不许拿 A 的 199 或 B 的课价来凑删除线
         （那是别的东西的原价，写成原价＝自己造一个假锚点） */
-  E: {list:"", trial:19.9, unit:"体验码",
-      valid:"1 个月内有效",
-      quota:"额度按次数或 token 计，发码时把具体多少一并说清",
-      what:"AI Agent 体验码"}
+  /* ⭐ E 的额度⛔ 不写在这里：两个系统单位不同（token / 次），写死一个就必然说错另一个。
+     额度从 AGENT[所选系统].quota 取（唯一真源在 AGENT）。 */
+  E: {list:"", trial:19.9, unit:"体验码", valid:"1 个月内有效"}
 };
 /* 收款入口（微信收款链接 / 小商店 / 表单都行）。留空 ⇒ 不渲染付款按钮，走微信手动收。 */
 const PAY = "";
@@ -219,8 +227,19 @@ const EXT = {
      共创营问「带几个人 / 现场想解决什么」＝席位数，正是后面排期与报价要用的两个字段。 */
   C: [{k:"seat",  t:"大概会带几位同事一起来？", type:"opt", opt:["就我一个","2–3 位","4 位以上","还没定"]},
       {k:"want",  t:"最想在现场解决哪一块？", type:"text", ph:"比如：选品排序 / 团队分工 / 利润"}],
-  E: [{k:"scene", t:"你最想让它先跑哪一块？", type:"opt", opt:["选品","Listing","投放","复盘"]},
-      {k:"now",   t:"现在主要靠什么工具或人工做？", type:"text", ph:"比如：表格 + 两个人"}],
+  /* ⭐ E 第一问 = 选系统（2026-10-20 定）：两个 Agent 是两套业务、两种计量单位，
+     ⛔ 必须先分开问，合并成一个"AI Agent 体验"＝额度说不清，也浪费一道筛选题。
+     第二问按所选系统分化 ⇒ `t`/`type`/`opt` 允许写成函数（nextQ 里用 S.ans 求值）。
+     ⛔ 产品设计的第二问不能照抄跨境电商的「选品 / Listing / 投放 / 复盘」——那是另一套业务，
+        客户选不出对的，只会乱点一个 ⇒ 产品设计改为自由输入兜住。 */
+  E: [{k:"sys",   t:"两个 Agent 我都开了体验，先试哪一个？", type:"opt",
+       opt:["AI 产品设计","AI 跨境电商"],
+       hint:"两个计量方式不同：产品设计按 token，跨境电商按次数"},
+      {k:"scene", t:a => a.sys === "AI 产品设计" ? "想让它先帮你做哪一块？用一句话写就行"
+                                                 : "你最想让它先跑哪一块？",
+       type:a => a.sys === "AI 产品设计" ? "text" : "opt",
+       opt:["选品","Listing","投放","复盘"],
+       ph:"比如：先把这一季的款型和卖点理出来"}],
   D: [{k:"scale", t:"你们现在大概什么体量？", type:"opt", opt:["亿级以上","千万级","百万级","刚起步 / 说不清"]},
       {k:"want",  t:"最想解决的是哪一块？", type:"text", ph:"比如：品牌份额 / 组织 / 利润"}]
 };
@@ -339,11 +358,15 @@ function pickBranch(code){
 async function nextQ(){
   if(S.i >= S.queue.length){ return confirm_(); }
   const q = S.queue[S.i];
+  /* ⭐ 问题允许写成函数（E 的第二问要按所选 Agent 换题型）⇒ 三个字段都要先求值再渲染。
+     ⛔ 只求值 t 不管 type / opt：产品设计那一路会照旧渲染成跨境电商的四个选项。 */
+  const ev = (v, d) => typeof v === "function" ? v(S.ans) : (v === undefined ? d : v);
+  const t = ev(q.t), ty = ev(q.type, "opt");
   await typing(420);
-  say(q.t);
+  say(t);
   S.stage = "s2";
-  if(q.type === "opt"){
-    options(q.opt, v=>{ S.ans[q.k] = v; S.i++; clearBar(); setTimeout(nextQ, 300); }, q.hint);
+  if(ty === "opt"){
+    options(ev(q.opt, []), v=>{ S.ans[q.k] = v; S.i++; clearBar(); setTimeout(nextQ, 300); }, q.hint);
   }else{
     askText(q.ph || "输入…", v=>{ S.ans[q.k] = v; S.i++; setTimeout(nextQ, 300); });
   }
@@ -363,6 +386,8 @@ async function confirm_(){
   /* ⭐ B 选的课题必须上复述卡：这是这一条线索的路由依据，
      卡片上不显示，客户只能凭印象点"对"，我们这边也就少了排序信息。 */
   if(a.topic) detail.push("课题「" + a.topic + "」");
+  /* ⭐ E 选的是哪一套系统必须上复述卡：额度、站点、发哪个码全挂在它上面 */
+  if(a.sys)   detail.push(a.sys);
   if(a.scene) detail.push(a.scene);
   if(a.want)  detail.push(a.want);
   if(a.block) detail.push("卡在「" + a.block + "」");
@@ -387,7 +412,7 @@ async function confirm_(){
     : S.branch === "D" ? "回复「对」我就按这个登记，同学会在 1 个工作日内电话联系你；哪里不对直接说，我改。"
     : S.branch === "B" ? "回复「对」我就把这个课题的试听那一集发你；哪里不对直接说，我改。"
     : S.branch === "C" ? "回复「对」我就把席位给你留上，并说清诚意金怎么交；哪里不对直接说，我改。"
-    : S.branch === "E" ? "回复「对」我就把这个体验码发你，并说清有效期和额度；哪里不对直接说，我改。"
+    : S.branch === "E" ? `回复「对」我就把 <b>${S.ans.sys || "Agent"}</b> 的体验码发你，并说清有效期和额度；哪里不对直接说，我改。`
     : "回复「对」我就把申请入口发你；哪里不对直接说，我改。");
   options(["对，没问题","不对，我要改"], async v=>{
     clearBar();
@@ -418,8 +443,9 @@ const AFTER = {
   /* ⭐ B 按所选课题报出「哪一集 + 多少分钟」（2026-10-20 定）：
      ⛔ 原来只说"试听入口在上面"等于没交付——客户不知道自己在等什么，
         也不知道这一集跟他刚选的课题是什么关系。 */
-  B: function(t){
-    const k = TRACK[t];
+  /* ⭐ AFTER 的函数统一收 S.ans（原来 B 只收 topic）：E 要按所选系统说话，只给一个字段不够用 */
+  B: function(a){
+    const k = TRACK[a.topic];
     if(!k) return "试听入口在上面，选你感兴趣的课题就行。听完有具体问题可以直接问我。";
     return `试听给你 <b>${k.ep}</b>，约 ${k.min} 分钟，1 个工作日内发你（微信发你文件或链接）。`
          + `<br>先发这一集，你先看讲法对不对胃口；合适再聊后面的。`;
@@ -428,8 +454,13 @@ const AFTER = {
   C: "席位我先给你留着，开营前我会把时间地点和要带的资料发你。<br>现场一次只解决一个问题，所以你先把最想解决的那一块想清楚，带着它来。",
   D: "电话之前你可以先想清楚三件事：现在的体量、最想改的<b>一个</b>指标、能投入多少时间。",
   /* ⛔ 原写「体验名额按登记顺序放」——那是免费的口气，与上面收 19.9 自相矛盾。
-     ⭐ 改说「体验码」：一个码 = 一份额度，有效期和额度说到明处，用完要再加也说得通。 */
-  E: "付了我就给你发一个体验码，开通后先附一份「Agent 能接哪些活」的清单，你按清单先跑最想跑的那一块；额度用完了要续，跟我说一声就行。"
+     ⭐ 改说「体验码」：一个码 = 一份额度，有效期和额度说到明处，用完要再加也说得通。
+     ⭐ 必须点名是哪一个系统：两个 Agent 是两套东西，客户要去对的地方才用得上。 */
+  E: function(a){
+    return `付了我就给你发一个体验码，你拿码去 <b>${a.sys}</b> 开。`
+         + `<br>开通后先附一份「它能接哪些活」的清单，你按清单先跑最想跑的那一块；`
+         + `额度用完了要续，跟我说一声就行。`;
+  }
 };
 const AFTER_TAIL = "还有别的问题可以直接问我；要找人聊，回复「人工」我转过去。";
 
@@ -452,11 +483,16 @@ function priceLine(b, a){
   if(b === "C" || b === "D")
     return `💰 这一步的费用：${p.what}诚意金 <b>¥${p.deposit}</b>`
          + `<br>${p.back}。`;
-  if(b === "E")
+  if(b === "E"){
     /* ⛔ E 没有原价 ⇒ 不画删除线（p.list 空就整段不出现），别为了排版好看硬造一个原价。
-       ⭐ 体验码必须说清「有效期 + 额度上限」：只说 19.9，客户会当成永久不限量，用完必来吵。 */
+       ⭐ 体验码必须说清「有效期 + 额度上限」：只说 19.9，客户会当成永久不限量，用完必来吵。
+       🔴 额度按所选系统取（产品设计 10,000 token / 跨境电商 10 次）：
+          ⛔ 两个系统单位不同，写死一句"有限额度"＝两边都说错。 */
+    const ag = AGENT[a.sys];
+    if(!ag) return "";
     return `💰 这一步的费用：${p.list ? `原价 <s>¥${p.list}</s> ` : ""}<b>体验价 ¥${p.trial}</b> 一个${p.unit}`
-         + `<br>${p.valid}，${p.quota}。`;
+         + `<br>${p.valid}，额度 <b>${ag.quota}</b>。`;
+  }
   return "";
 }
 /* 应付金额（给付款按钮和推送标题用）。⛔ 与 priceLine 同源，别两处各算一遍 */
@@ -480,7 +516,9 @@ async function deliver(){
      ⛔ 任何一档都不能出现"你不符合条件" —— 那等于当众否定，也掐掉一条能养的线索。 */
   /* ⭐ B 的链接按课题取（LINKS.B 是对象，不是字符串）。
      ⛔ 直接 link = LINKS[b] 会拿到一个对象，href 变成 "[object Object]" —— 死链。 */
-  let link = (b === "B") ? (LINKS.B[S.ans.topic] || "") : LINKS[b], note = "", hi = "";
+  let link = (b === "B") ? (LINKS.B[S.ans.topic] || "")
+           : (b === "E") ? (LINKS.E[S.ans.sys] || "")
+           : LINKS[b], note = "", hi = "";
   if(b === "D"){
     const sc = a.scale || "";
     if(sc === "亿级以上" || sc === "千万级"){
@@ -515,8 +553,10 @@ async function deliver(){
   /* ⛔ 没有真链接就不渲染这个按钮（LINKS 为空时 link 为 undefined）——死链比没按钮更伤信任 */
   /* ⭐ 按钮文案跟着交付物走：B=看试听 · 课题／C/D=填写申请／E=领体验码。
      ⛔ E 写"填写申请"＝客户以为还要再走一轮审批，付了钱还被卡一道。 */
+  /* ⭐ E 的按钮直接指到他选的那一套系统（⛔ 不写"领体验码"：码是付完款才发的，
+     点进去只是到体验站，写成"领码"＝客户点开没码，以为被骗） */
   const btnTxt = b === "B" ? "看试听 · " + (a.topic || "课程")
-               : b === "E" ? "领体验码 · " + BRANCH_NAME[b]
+               : b === "E" ? "去 " + (a.sys || "Agent") + " 体验站"
                : "填写申请 · " + BRANCH_NAME[b];
   d.innerHTML = (link ? `<a class="btn" href="${link}" target="_blank" rel="noopener">${btnTxt}</a>` : "")
               + `<button class="btn ghost" id="cp">复制我的信息</button>`;
@@ -529,7 +569,7 @@ async function deliver(){
      两句并列就是自相矛盾，客户只会记住被拖的那句。 */
   /* AFTER.B 是函数（按课题报集名），其余是字符串 ⇒ 先判类型再拼，⛔ 直接 + 会把函数体拼进话术 */
   const af = AFTER[b] || AFTER.B;
-  say(typeof af === "function" ? af(a.topic) : af);
+  say(typeof af === "function" ? af(a) : af);
 
   /* ⭐ 报价紧跟在"给什么"之后，⛔ 不在开场、不在确认前报（先要钱后说给什么＝纯劝退） */
   const pl = priceLine(b, a), amt = amount(b, a);
@@ -563,6 +603,8 @@ function payload(){
     scale: a.scale, stage: a.stage, block: a.block, role: a.role, want: a.want,
     topic: a.topic, trial_ep: (TRACK[a.topic] || {}).ep || "",
     seat: a.seat, scene: a.scene, now: a.now, amount: amt,
+    /* E 选了哪一套系统 + 对应额度：发码的人照这个发，⛔ 别靠 scene 猜（两套业务的词会撞） */
+    sys: a.sys, agent_quota: (AGENT[a.sys] || {}).quota || "",
     /* 收的是什么钱：trial=体验价 / deposit=诚意金 / 空=未报价。CRM 里按这个筛，⛔ 别靠分支名猜 */
     /* A/B/E = 体验价；C/D = 诚意金。⛔ E 定过价后必须显式写进 trial，
        原写法（A||B 之外全落 deposit）会把 E 记成诚意金，CRM 里按钱的类型筛就全错 */
@@ -572,8 +614,9 @@ function payload(){
   if(SINK === "pushplus"){
     return Object.assign(base, {token: SINK_TOKEN,
       /* 课题 + 金额进标题：微信推送列表里一眼看出该发什么、收多少，不用点开正文 */
+      /* ⭐ 区分字段进标题：B 带课题、E 带系统（发码的人一眼知道要发哪一种码） */
       title: "新线索 · " + BRANCH_NAME[S.branch] + (a.topic ? " · " + a.topic : "")
-             + (amt ? " · ¥" + amt : "") + (hi ? " · 高意向" : ""),
+             + (a.sys ? " · " + a.sys : "") + (amt ? " · ¥" + amt : "") + (hi ? " · 高意向" : ""),
       content: t, template: "txt"});
   }
   if(SINK === "feishu"){
@@ -617,7 +660,7 @@ function feeText(b, a){
   if(b === "A") return "应付：¥" + amt + "（体验价，原价 ¥" + PRICE.A.list + "）";
   if(b === "B"){ const k = PRICE.B[a.topic] || {}; return "应付：¥" + amt + "（试听体验价，原价 ¥" + (k.list || "-") + "）"; }
   /* ⛔ 别让 E 掉进下面那句「诚意金」——E 收的是体验价不是诚意金，推送标题写错＝你照着错的钱去收 */
-  if(b === "E") return "应付：¥" + amt + "（体验码，1 个月内有效）";
+  if(b === "E") return "应付：¥" + amt + "（体验码，1 个月内有效，额度 " + ((AGENT[a.sys] || {}).quota || "-") + "）";
   return "应付：¥" + amt + "（诚意金，" + PRICE[b].back + "）";
 }
 function summary(){
@@ -632,7 +675,8 @@ function summary(){
     S.branch === "A" ? "链接：" + (a.url || "-") + "\n卡点：" + (a.block || "-") :
     S.branch === "B" ? "角色：" + (a.role || "-") + "\n课题：" + (a.topic || "-") + "（试听 " + ((TRACK[a.topic] || {}).ep || "待定") + "）" :
     S.branch === "C" ? "席位：" + (a.seat || "-") + "\n想解决：" + (a.want || "-") :
-    S.branch === "E" ? "场景：" + (a.scene || "-") + "\n现用工具：" + (a.now || "-") :
+    S.branch === "E" ? "系统：" + (a.sys || "-") + "\n想跑：" + (a.scene || "-")
+                       + "\n额度：" + ((AGENT[a.sys] || {}).quota || "-") :
                        "体量：" + (a.scale || "-") + "\n想解决：" + (a.want || "-"),
     feeText(S.branch, a)
   ].join("\n");
