@@ -257,7 +257,7 @@ async function s0(){
      ⛔ 不要留 href="tel:" 的空号，点下去毫无反应（2026-10-20 用户实测踩到） */
   if(MY_TEL){ const ft = document.getElementById("footTel"); if(ft) ft.innerHTML = `<a href="tel:${MY_TEL}">转人工</a>`; }
   await typing(500);
-  say("你好，我是 <b>Kiki-Bot</b>，KK 团队的 AI 顾问 👋<br>我可以帮你对接四件事：链接诊断、课程试听、自研 AI Agent 体验名额、咨询预约。<br>大概 30 秒问清情况，我就把对应的申请入口发给你。过程中不会向第三方泄露你的信息。<br><br>先问一下：你现在最想解决的是哪一类？");
+  say("你好，我是 <b>Kiki-Bot</b>，KK 团队的 AI 顾问 👋<br>我可以帮你对接四件事：链接诊断、课程试听、自研 AI Agent 体验名额、咨询预约。<br>大概 30 秒问清情况，我按你的情况给你对应的安排（诊断报告 / 试听入口 / 体验名额 / 电话回联）。过程中不会向第三方泄露你的信息。<br><br>先问一下：你现在最想解决的是哪一类？");
   if(PRE && BRANCH_NAME[PRE]){          /* 深链直达分支，省掉一次选择 */
     setTimeout(()=>{ say(`你要的是 <b>${BRANCH_NAME[PRE]}</b> 对吧？直接开始 👇`, true); pickBranch(PRE); }, 320);
     return;
@@ -321,7 +321,11 @@ async function confirm_(){
   say("我记一下，你看对不对：");
   card(rows.map(r=>`<div class="kv"><div class="k">${r[0]}</div><div class="v">${esc(r[1])}</div></div>`).join(""));
   await typing(300);
-  say("回复「对」我就把申请链接发你；哪里不对直接说，我改。");
+  /* ⭐ 交付物已按分支分化：A=两份报告 / D=电话回联 / B,C=入口。
+     ⛔ 统一说"申请链接"会让 A、D 客户等一个根本不会来的链接。 */
+  say(b === "A" ? "回复「对」我就按这个链接给你出两份报告；哪里不对直接说，我改。"
+    : b === "D" ? "回复「对」我就按这个登记，同学会在 1 个工作日内电话联系你；哪里不对直接说，我改。"
+    : "回复「对」我就把申请入口发你；哪里不对直接说，我改。");
   options(["对，没问题","不对，我要改"], async v=>{
     clearBar();
     if(v.startsWith("对")) return deliver();
