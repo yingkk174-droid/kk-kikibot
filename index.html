@@ -97,7 +97,8 @@ header{
    ⛔ 金额是客户手输的（固定收款码不带金额），不在码旁边写死数字＝必有人付错。 */
 .pay{text-align:center}
 .pay img{
-  width:184px;height:184px;max-width:76%;margin:2px auto 10px;display:block;
+  /* 212 = 手机屏上"一眼看出这是要扫的东西"的下限；再小客户会以为是装饰图而不是收款码 */
+  width:212px;height:212px;max-width:84%;margin:2px auto 10px;display:block;
   border:1px solid var(--line);border-radius:12px;background:#fff;object-fit:contain
 }
 .pay .amt{font-size:19px;font-weight:700;color:var(--ink);letter-spacing:.3px}
@@ -199,7 +200,7 @@ const PRICE = {
       渲染与否一律走 payBlock()：金额为空、或（图与微信号都没有）⇒ 整块不渲染。
    🔴 图挂了/还没图 ⇒ 自动落到文字版（加微信要码），⛔ 绝不出现破图。 */
 const PAY = {
-  img: "",        // 收款码图：仓库内相对路径（如 pay_qr.png）或 https 外链。留空 ⇒ 走文字版
+  img: "pay_qr.png",  // 收款码图（2026-10-21 上线）：相对路径，与 index.html 同目录。留空 ⇒ 走文字版
   /* 🔴 两句做法要分开写：图版才能说「长按保存这张码」，文字版里根本没有码，说了等于让客户去找一张不存在的图 */
   howImg:  "长按保存这张码 → 微信「扫一扫」右上角「相册」→ 付款，把付款截图发我",
   howText: "加我后我把收款码发你 → 付款，把付款截图发我"
