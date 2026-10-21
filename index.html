@@ -132,7 +132,7 @@ header{
 
   <div id="bar"></div>
   <div class="foot">
-    信息仅用于本次对接，不会提供给第三方 · <span id="footTel">转人工</span>
+    信息仅用于本次对接，不会提供给第三方<span id="footTel"></span>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -372,7 +372,9 @@ function toast(msg){
 async function s0(){
   /* 页脚电话：MY_TEL 为空就保持纯文本「转人工」——
      ⛔ 不要留 href="tel:" 的空号，点下去毫无反应（2026-10-20 用户实测踩到） */
-  if(MY_TEL){ const ft = document.getElementById("footTel"); if(ft) ft.innerHTML = `<a href="tel:${MY_TEL}">转人工</a>`; }
+  /* ⛔ 没电话就把整个「· 转人工」去掉，别留一个点了没反应的纯文本（看着像能点，其实是死路） */
+  const ft = document.getElementById("footTel");
+  if(ft) MY_TEL ? ft.innerHTML = ` · <a href="tel:${MY_TEL}">转人工</a>` : ft.remove();
   await typing(500);
   /* ⛔ 开场不报价（S4 才报）：先让人知道能得到什么，再说多少钱。
      一上来就报 19.9 / 500 会把还在观望的人吓跑，线索直接少一半。 */
@@ -456,12 +458,18 @@ async function confirm_(){
   /* 🔴 这里只有 S.branch，没有局部变量 b（b 只在 deliver() 里定义）。
      上一版误用 b ⇒ ReferenceError ⇒ 后面的 options()/askText() 全不执行 ⇒
      复述卡出来却没有确认按钮，客户卡死在 s3。改回 S.branch。 */
-  say(S.branch === "A" ? "回复「对」我就按这个链接给你出两份报告；哪里不对直接说，我改。"
-    : S.branch === "D" ? "回复「对」我就按这个登记，同学会在 1 个工作日内电话联系你；哪里不对直接说，我改。"
-    : S.branch === "B" ? "回复「对」我就把这个课题的试听那一集发你；哪里不对直接说，我改。"
-    : S.branch === "C" ? "回复「对」我就把席位给你留上，并说清诚意金怎么交；哪里不对直接说，我改。"
-    : S.branch === "E" ? `回复「对」我就把 <b>${S.ans.sys || "Agent"}</b> 的体验码发你，并说清有效期和额度；哪里不对直接说，我改。`
-    : "回复「对」我就把申请入口发你；哪里不对直接说，我改。");
+  /* 🔴🔴 措辞必须跟界面一致：**这一步给的是两个按钮，不是输入框**。
+     原版写「回复『对』」「哪里不对直接说」——手机上根本没有地方可输，
+     客户照着做只会在底部找输入框，找不到就以为页面坏了（跟「回复『人工』」同一个病：
+     **凡是"让他输入"的指令，先确认那一刻 bar 里到底有没有输入框**）。
+     ⇒ 一律改成点按钮的说法，并点名按钮上的字。 */
+  const BAD = "；哪里不对点「不对，我要改」，我重新问一遍。";
+  say(S.branch === "A" ? "点「对，没问题」我就按这个链接给你出两份报告" + BAD
+    : S.branch === "D" ? "点「对，没问题」我就按这个登记，同学会在 1 个工作日内电话联系你" + BAD
+    : S.branch === "B" ? "点「对，没问题」我就把这个课题的试听那一集发你" + BAD
+    : S.branch === "C" ? "点「对，没问题」我就把席位给你留上，并说清诚意金怎么交" + BAD
+    : S.branch === "E" ? `点「对，没问题」我就把 <b>${S.ans.sys || "Agent"}</b> 的体验码发你，并说清有效期和额度` + BAD
+    : "点「对，没问题」我就把申请入口发你" + BAD);
   options(["对，没问题","不对，我要改"], async v=>{
     clearBar();
     if(v.startsWith("对")) return deliver();
@@ -513,7 +521,12 @@ const AFTER = {
          + `<br>开通后附一份「它能接哪些活」的清单，${m}额度用完了要续，跟我说一声就行。`;
   }
 };
-const AFTER_TAIL = "还有别的问题可以直接问我；要找人聊，回复「人工」我转过去。";
+/* 🔴🔴 S4 走完时 `deliver()` 已经 clearBar() ⇒ **底部没有输入框了**。
+   所以这句里⛔ 不能出现「直接问我」「回复『人工』」——客户手底下没有地方可输，
+   写了就是一条死路（D 分支曾因同样的病让客户「回复 B」，已修过一次）。
+   ⇒ 收尾只给**微信这一个真实出口**，且号不写在这里（下面 hint 里已经有了，
+     同一屏两次同一个号＝像机器人复读，也会让最后那句被跳过）。 */
+const AFTER_TAIL = "还有别的想问的，加微信直接问我就行 —— 我看到就回。";
 
 /* ⭐⭐ 价格气泡（2026-10-20 定）：**⛔ 没有免费体验，只有体验价 / 诚意金**。
    🔴 只在 S4、在交付物说完之后报 —— 顺序反了（先要钱后说给什么）＝纯劝退。
@@ -710,9 +723,13 @@ async function deliver(){
   const f = document.createElement("div"); f.className = "hint";
   /* ⭐ 没有企微活码时，这是唯一能沉淀好友关系的一步：聊完顺手把人加到你的微信。
      留空就不渲染（⛔ 别渲染一个空的「加我微信」） */
-  f.innerHTML = (MY_WECHAT ? `想直接聊：加我微信 <b>${MY_WECHAT}</b>，备注「海报」<br>` : "")
-              + "回复「人工」转人工" + (MY_TEL ? ` · <a href="tel:${MY_TEL}">直接打电话</a>` : "");
-  bar.appendChild(f);
+  /* 🔴 同理：⛔ 不写「回复『人工』」——这里没有输入框可回。
+     两个出口（微信 / 电话）谁有值就渲染谁；⚠️ 都没有就**整块不挂**，别留一个空框。 */
+  const parts = [];
+  if(MY_WECHAT) parts.push(`想直接聊：加我微信 <b>${MY_WECHAT}</b>，备注「海报」`);
+  if(MY_TEL)    parts.push(`或直接打电话 <a href="tel:${MY_TEL}">${MY_TEL}</a>`);
+  if(!parts.length) f.remove();
+  else { f.innerHTML = parts.join("<br>"); bar.appendChild(f); }
 
   send();
   window.__LEAD__ = payload();
