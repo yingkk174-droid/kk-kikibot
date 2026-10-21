@@ -106,11 +106,28 @@ header{
   /* 212 = 手机屏上"一眼看出这是要扫的东西"的下限；再小客户会以为是装饰图而不是收款码 */
   width:212px;height:212px;max-width:84%;margin:2px auto 6px;display:block;
   border:1px solid var(--line);border-radius:12px;background:#fff;object-fit:contain;
-  /* 🔴 显式放开长按：客户唯一的付款主路径就是"长按 → 识别图中二维码"。
-     ⛔ 别给 img 套 <a>（iOS/微信里长按包链接的图，弹的是**链接**菜单，识别入口直接消失）
-        ⇒ 想要"打开大图"只能做图**下方**的独立文字链接，不碰 img。 */
+  /* 🔴🔴 长按**只是备用路径**，⛔ 别再把"长按 → 识别图中二维码"写进文案（2026-10-21 kk 真机实测：
+     微信内置浏览器里长按这张码，菜单里**根本没有「识别图中二维码」这一项** ——
+     那一项只在"聊天记录/朋友圈/公众号文章里的图"上才有，webview 里的 <img> 不给。
+     我上一版把一条**不存在的菜单项**写成了主路径，客户照着做就卡死。）
+     ⇒ 主路径改成码下方的「点这里付款」按钮（走 wxp:// 收款链接，见 payBlock 的注释）。
+     ⛔ img 外面依然不许包 <a>：包了长按弹的是**链接**菜单，连"保存图片"都会没。
+        想要"看大图"只能做图**下方**的独立文字链接，不碰 img。 */
   -webkit-touch-callout:default; -webkit-user-select:auto; user-select:auto; -webkit-user-drag:auto
 }
+/* ⭐⭐ 一步付款按钮：微信里点它直接进付款页 —— 不长按、不保存、不扫、不出微信。
+   这是 2026-10-21 实测"长按没有识别项"之后的主路径；码本身降级为"扫不出来时的兜底"。 */
+.pay .pbtn{display:block;margin:10px auto 0}
+/* ⭐ 兜底指引：默认**收起**，只有"点了按钮但没跳走"才展开 ——
+   ⛔ 一开始就铺两条路＝客户不知道先走哪条（2026-10-21 已踩，两条并列原地卡住）。 */
+.pay .fbk{display:none;margin-top:8px;padding:9px 11px;background:var(--accent-bg);
+  border-radius:10px;font-size:12.5px;color:var(--ink);line-height:1.8;text-align:left}
+.pay .fbk.on{display:block}
+/* 续聊卡（跳出去扫一扫回来时用） */
+.resume{text-align:center}
+.resume .rh{font-size:14px;color:var(--ink);line-height:1.6}
+.resume .rs{font-size:12.5px;color:var(--sub);line-height:1.7;margin:6px 0 10px}
+.resume .btn{width:100%;font-family:inherit;cursor:pointer;border:none}
 .pay .zoom{display:inline-block;font-size:12.5px;color:var(--sub);margin:-2px auto 8px;text-decoration:underline}
 .pay .amt{font-size:19px;font-weight:700;color:var(--ink);letter-spacing:.3px}
 .pay .amt b{color:var(--accent);font-size:22px}
@@ -222,20 +239,23 @@ const PRICE = {
    🔴 图挂了/还没图 ⇒ 自动落到文字版（加微信要码），⛔ 绝不出现破图。 */
 const PAY = {
   img: "pay_qr.png",  // 收款码图（2026-10-21 上线）：相对路径，与 index.html 同目录。留空 ⇒ 走文字版
-  /* 🔴🔴 两条路谁排第一 = **按环境定，不写死**（2026-10-21 kk 实测后定的判据）：
-     ① 长按识别 = 两步、**完全不出微信**；② 存相册再扫 = 四步、**要退出微信**。
-     ⛔ 上一版把"长按保存 → 扫一扫 → 右上角相册"写成唯一路径，两个后果：
-        a) 三步、且每步都能卡住（保存失败 / 相册图压缩后识别不出 / 找不到相册入口）；
-        b) 客户一退出微信，这个页面就从会话里掉了，前六题白答 —— 这是最毒的那一条。
-     ⭐ 判据：**先给当下能走通的那条，走不通的降为备用**；备用单独一行，别混在同一句里读不出来。
-     🔴 微信外（UA 里没有 MicroMessenger）长按**根本不出**「识别图中二维码」
-        ⇒ 那时候必须把"存相册"顶到第一行，否则客户第一条就撞死。 */
-  howWx:   "<span class=\"p1\">① 长按这张码 → 点「识别图中二维码」→ 直接付</span>"
-         + "（不用存相册，付完自动回到这页，刚才聊的都还在）<br>"
-         + "② 识别不出来再走这条：点码下面的「看大图」→ 存到相册 → 微信「扫一扫」→ 右上角「相册」",
+  /* 🔴🔴🔴 付款主路径 = **点 wxp:// 链接**，不是长按码（2026-10-21 kk 真机实测改判）。
+     实测结果：微信内置浏览器（webview）里长按这张收款码，弹出菜单**没有「识别图中二维码」这一项**。
+     那一项只在「聊天记录 / 朋友圈 / 公众号文章」里的图片上才有；H5 页面里的 <img> 不给。
+     ⛔ 上一版把一条**手机上根本不存在的菜单项**写成主路径，客户照做就卡死，等于把钱挡在门外。
+     ⇒ 主路径改成：码下方那个「点这里付款」按钮（href = 下面的 wxp 链接），一步直达微信付款页。 */
+  wxp:     "wxp://f2f0McafgMpfCRq1yv8hMqTscbKQdr7VbJa22TMvjw4UZMY",
+  /* 🔴 wxp 是**从 pay_qr.png 里解码出来的**，不是手抄的（2026-10-21 cv2 解码得 `wxp://f2f0…vjw4UZMY`）。
+     ⛔ 换收款码图时必须**重新解码**再改这里：微信的面对面收款码会刷新，码一变链接就作废，
+        而页面不会报错 —— 只表现为"点了没反应"，你会以为是微信不支持，白排查半天。 */
+  /* ⭐ 这里只做一件事：把"扫不出来"的人**导向按钮**。
+     ⛔ 别在这儿也写一遍"存到相册"的三步 —— 那是兜底块（.fbk）的活，
+        两处都写＝同一段话出现两次，客户读到第二遍就跳过第一段了（2026-10-21 截图里撞到）。 */
+  howWx:   "付款备注里写上你的名字，方便我对账。<br>码扫不出来就点上面那个按钮，一样能付。",
   howOut:  "<span class=\"p1\">① 点码下面的「看大图」→ 存到相册 → 打开微信「扫一扫」"
          + "→ 右上角「相册」选这张 → 付款</span><br>"
-         + "② 更省事的走法：把这个链接转发进微信再打开，就能直接长按识别了",
+         + "② 把这个链接转发进微信再打开，就能直接点按钮付款（不用存、不用扫）<br>"
+         + "付款备注里写上你的名字，方便我对账。",
   howText: "加我后我把收款码发你 → 付款，把付款截图发我"
 };
 /* 🔴 环境判定：微信内置浏览器的 UA 里带 MicroMessenger。
@@ -359,6 +379,31 @@ const S = {branch:null, queue:[], i:0, ans:{}, stage:"s0"};
 const chat = document.getElementById("chat");
 const bar  = document.getElementById("bar");
 const KEY  = "kikibot_ans";
+const PROG = "kikibot_prog";
+/* 🔴 "这个页面有没有被切走"的全局标记 —— 用来判断「点这里付款」到底有没有跳成功。
+   真跳进微信付款页时，webview 会被那层原生页面盖住 ⇒ 触发 visibilitychange 且 hidden=true。
+   点了按钮 2.2 秒后若**从没 hidden 过**，说明微信没接这个 wxp:// ⇒ 展开"存相册再扫"的兜底。
+   ⛔ 别用"点击后延时无条件展开"：付完回来的客户会看到一句"没跳出来？"，以为自己没付成。 */
+let _leftPage = false;
+document.addEventListener("visibilitychange", ()=>{ if(document.hidden) _leftPage = true; });
+
+/* ⭐⭐ 进度存档（2026-10-21）：付款要"存相册 → 扫一扫"，客户**必然要离开这个页面**。
+   而他一离开（哪怕只是切到扫一扫），回来时页面多半已被回收/刷新 ⇒ 六题白答、从头再来。
+   ⛔ 上一版的兜底文案写着"付完自动回到这页，刚才聊的都还在" —— 那是**假的**，页面根本没存过。
+   ⇒ 进 S4 就存一份 {分支, 答案, 是否已点付好}，回来时一键重放到付款那一步。
+   🔴 只存**业务数据**，⛔ 不存 innerHTML：DOM 里的 onclick 是 JS 属性，序列化后再塞回去会
+      变成一堆点了没反应的死按钮（事件全丢）⇒ 恢复必须**重新走一遍渲染**，不能回放 HTML。 */
+function saveProg(){
+  try{ localStorage.setItem(PROG, JSON.stringify({b:S.branch, a:S.ans, p:S.paid||0, t:Date.now()})); }catch(e){}
+}
+function loadProg(){
+  try{
+    const r = JSON.parse(localStorage.getItem(PROG) || "null");
+    if(!r || !r.b) return null;
+    if(Date.now() - r.t > 72*3600*1000) return null;   /* 三天前的半成品不再打扰 */
+    return r;
+  }catch(e){ return null; }
+}
 
 /* ---------- 渲染 ---------- */
 function scroll(){ requestAnimationFrame(()=>chat.scrollTop = chat.scrollHeight); }
@@ -422,6 +467,28 @@ function toast(msg){
   setTimeout(()=>t.classList.remove("on"), 1500);
 }
 
+/* ⭐⭐ 续聊卡（2026-10-21）：付款要"存相册 → 扫一扫"，**必须离开这个页面**，
+   而微信随时会把这个 webview 回收掉 ⇒ 客户扫完回来，六题全没了、从头再答一遍＝绝大多数人就此流失。
+   ⇒ 一回来就给他这张卡：点一下直接重放到付款那一步，答案原样带过去。
+   🔴 重放走 `deliver(true)`，⛔ 不回放 HTML：DOM 里的 onclick 是 JS 属性，
+      存 innerHTML 再塞回去会得到一堆点了没反应的死按钮（事件全丢）。 */
+function resumeCard(r){
+  const amt = amount(r.b, r.a || {});
+  const who = BRANCH_NAME[r.b] || "";
+  const c = card(`<div class="resume">`
+    + `<div class="rh">上次没走完 · <b>${who}</b>${(r.a || {}).topic ? " · " + r.a.topic : ""}`
+    + `${amt ? " · ¥" + amt : ""}</div>`
+    /* ⭐ 已点过「我付好了」的，⛔ 别再让他点一次（重复推送会刷屏，还会被误判成两笔订单） */
+    + (r.p ? `<div class="rs">你已经点过「我付好了」，我这边正在核收款 —— 不用再点。</div>`
+           : `<div class="rs">前面那几题不用重答，点下面直接回到付款那一步。</div>`)
+    + `<button class="btn" id="rs">回到付款那一步 →</button></div>`);
+  c.querySelector("#rs").onclick = ()=>{
+    S.branch = r.b; S.ans = r.a || {}; S.paid = r.p || 0; S.stage = "s4";
+    chat.innerHTML = ""; clearBar();
+    deliver(true);
+  };
+}
+
 /* ---------- 流程 ---------- */
 async function s0(){
   /* 页脚电话：MY_TEL 为空就保持纯文本「转人工」——
@@ -429,11 +496,19 @@ async function s0(){
   /* ⛔ 没电话就把整个「· 转人工」去掉，别留一个点了没反应的纯文本（看着像能点，其实是死路） */
   const ft = document.getElementById("footTel");
   if(ft) MY_TEL ? ft.innerHTML = ` · <a href="tel:${MY_TEL}">转人工</a>` : ft.remove();
+  /* ⭐ 有未完成进度就先把续聊卡挂出来：回来的人第一眼要看到"不用重来"。
+     ⛔ 不替他自动跳 —— 他可能只是点错进来的，自动重放会把开场白整个吞掉。 */
+  const pr = loadProg();
+  if(pr) resumeCard(pr);
   await typing(500);
   /* ⛔ 开场不报价（S4 才报）：先让人知道能得到什么，再说多少钱。
      一上来就报 19.9 / 500 会把还在观望的人吓跑，线索直接少一半。 */
   say("你好，我是 <b>Kiki-Bot</b>，KK 团队的 AI 顾问 👋<br>我可以帮你对接五件事：链接诊断、课程试听、线下共创营、咨询预约、自研 AI Agent 体验码。<br>大概 30 秒问清情况，我按你的情况给你对应的安排（诊断报告 / 试听一集 / 席位 / 电话回联 / 体验码），并说清这一步的费用。过程中不会向第三方泄露你的信息。<br><br>先问一下：你现在最想解决的是哪一类？");
-  if(PRE && BRANCH_NAME[PRE]){          /* 深链直达分支，省掉一次选择 */
+  /* 🔴 有未完成存档时**不许**自动开跑（2026-10-21）：
+     客户是 refresh 回来的，URL 上那个 ?b=A 还在 ⇒ 会自动从第一题重答一遍，
+     把顶上那张"回到付款那一步"的续聊卡直接冲走，等于存档白存。
+     ⇒ 有存档就停在"开场白 + 续聊卡"，他自己点继续、或者从下面的选项重新选一个分支（＝真重来）。 */
+  if(PRE && BRANCH_NAME[PRE] && !pr){    /* 深链直达分支，省掉一次选择 */
     setTimeout(()=>{ say(`你要的是 <b>${BRANCH_NAME[PRE]}</b> 对吧？直接开始 👇`, true); pickBranch(PRE); }, 320);
     return;
   }
@@ -731,15 +806,28 @@ function payBlock(amt){
   if(!PAY.img) return payText(amt, false);
   /* ⛔ 金额写「应付」而不是「扫这张码付」：图万一没出来，这句话就不通了（金额本身是中性的） */
   return `<div class="pay">`
-       /* ⛔ img 外面不许包 <a>：见 .pay img 的 CSS 注释 —— 包了长按弹的是**链接**菜单，"识别图中二维码"就没了 */
+       /* ⛔ img 外面不许包 <a>：见 .pay img 的 CSS 注释 —— 包了长按弹的是**链接**菜单，连"保存图片"都丢。 */
        + `<img src="${PAY.img}" alt="微信收款码">`
        + `<a class="zoom" href="${PAY.img}" target="_blank" rel="noopener">看不清？点这里看大图</a>`
        + `<div class="amt">应付 <b>¥${amt}</b></div>`
+       /* ⭐⭐ 一步付款按钮（2026-10-21 实测"长按没有识别项"后新增的**主路径**）：
+          微信里点它 → 直接进付款页，**不长按、不保存、不扫、不出微信**，付完点「完成」自动回这页。
+          🔴 只**在微信里**渲染：外部浏览器点了 wxp:// 只会弹"没有应用可以打开"＝一条死路，
+             ⛔ 那种环境必须走"存相册 → 扫一扫"，所以按钮和文案都按 IN_WX 分叉，⛔ 别一刀切。 */
+       + (IN_WX && PAY.wxp ? `<a class="btn pbtn" id="wxpay" href="${PAY.wxp}">点这里付款 →</a>` : "")
+       /* ⭐ 兜底默认**收起**：只在"点了按钮但没跳走"时才展开（绑定见 deliver）。
+          ⛔ 一开始就铺两条路＝客户不知道先点哪个（2026-10-21 已踩：两条并列，人原地卡住）。 */
+       /* ⚠️ 长按菜单到底有哪几项，各版本微信不一样（实测过的是"没有识别图中二维码"这一项）。
+          ⇒ 写"保存图片"时必须**同时给一条不用长按的备选**：点上面的「看大图」，在打开的大图里长按保存。 */
+       + `<div class="fbk" id="payfbk">没跳出来？那就走相册：`
+       + `① 长按上面这张码 →「保存图片」（没有这一项就点上面的「看大图」，在打开的大图里长按保存）；`
+       + `② 微信右上角 ⊕ →「扫一扫」；`
+       + `③ 扫一扫里右上角 ⋯ →「相册」→ 选刚才那张。<br>`
+       + `付完回到这一页，点下面的「我付好了」就行 —— 刚才聊的那些我都给你存着，不用重填。</div>`
        /* 🔴 这一块只讲「怎么付 + 怎么对账」，⛔ 别提"点下面那个按钮" ——
           紧跟着的确认卡已经说了，两处都说＝客户不知道先看哪个（还把这块撑成五行小字）。
           "付完干什么"整件事归确认卡。 */
        + `<div class="how">${IN_WX ? PAY.howWx : PAY.howOut}`
-       + `<br>付款备注里写上你的名字，方便我对账。`
        /* 🔴 卡内⛔ 再写微信号：紧跟下面的气泡已经说了"发我微信 X"，
           同屏三次同一个号＝机器人复读，客户会跳过最后那句（2026-10-21 截图里抓到的）。
           卡内只说动作，号一律留给后面的气泡。 */
@@ -772,9 +860,20 @@ function paidCard(amt){
     + `${MY_WECHAT ? ` —— 没加我微信的话，页面最下面那行有号` : ""}。</div>`
     + `</div>`);
   const btn = c.querySelector("#paid"), tip = c.querySelector(".tip");
+  /* 🔴 恢复存档时 S.paid 可能已经是 1（他付完又跳出去过，回来重放到这一步）。
+     那时按钮必须**一上来就是「已收到」态**：⛔ 显示成"我付好了"＝他以为上次没点上，
+     会再按一次 —— 而 onclick 里有 S.paid 保护，点了没反应，他就卡在这儿不知道到底算不算付过。 */
+  if(S.paid){
+    btn.disabled = true;
+    btn.classList.add("done");
+    btn.textContent = "✅ 已收到，等他核对";
+    tip.innerHTML = `收到了 —— 我去核一下收款，核对完就${act}。`
+      + (MY_WECHAT ? `还没加我微信的话，加一下 <b>${MY_WECHAT}</b>，码直接发过去。` : "");
+  }
   btn.onclick = ()=>{
     if(S.paid) return;          /* ⛔ 连点会重复推送，我这边刷屏，还会误判成两笔订单 */
     S.paid = 1;
+    saveProg();                 /* ⭐ 存 p=1：他付完很可能还要切走，回来时别再让他点一次 */
     btn.disabled = true;
     btn.classList.add("done");     /* 换成"回执"外观，见 .cta .btn.done 的注释 */
     btn.textContent = "✅ 已收到，等他核对";
@@ -788,8 +887,11 @@ function paidCard(amt){
   return c;
 }
 
-/* S4 交付 */
-async function deliver(){
+/* S4 交付
+   🔴 replay=true = 从存档**重放**（客户跳出去扫一扫又回来了）⇒ ⛔ 不能再次 send()：
+      那会在你微信里再刷一条一模一样的线索，看着像来了两个客户。
+      只有真正第一次走完流程才推送。 */
+async function deliver(replay){
   S.stage = "s4";
   clearBar();
   const a = S.ans, b = S.branch;
@@ -870,6 +972,14 @@ async function deliver(){
         const w = pc.querySelector(".pay"), t = payText(amt, true);
         if(w && t) w.outerHTML = t; else if(w) w.style.display = "none";
       };
+      /* ⭐ 点了「点这里付款」但没跳走 ⇒ 微信没接这个 wxp:// ⇒ 展开"存相册再扫"的兜底。
+         判据用 _leftPage（页面有没有被盖住过），见 S 定义处的注释。 */
+      const wp = pc.querySelector("#wxpay");
+      if(wp) wp.onclick = ()=> setTimeout(()=>{
+        if(_leftPage) return;                 /* 已经切走了 ⇒ 跳成功了，别再啰嗦 */
+        const f = pc.querySelector("#payfbk");
+        if(f){ f.classList.add("on"); scroll(); }
+      }, 2200);
       await typing(400);
       /* ⭐ 退款小字紧跟收款卡、在"付完动作"之前：客户手还在码上，这一句正好拦住"我要是反悔呢"。
          ⛔ 放到最后（加微信引导附近）＝多数人根本滑不到那，等于没说。 */
@@ -895,9 +1005,12 @@ async function deliver(){
   if(!parts.length) f.remove();
   else { f.innerHTML = parts.join("<br>"); bar.appendChild(f); }
 
-  send();
+  /* ⛔ 重放不推送：见 deliver(replay) 的注释 —— 否则你微信里会再刷一条同样的线索 */
+  if(!replay) send();
   window.__LEAD__ = payload();
   try{ localStorage.setItem(KEY, JSON.stringify(window.__LEAD__)); }catch(e){}
+  /* ⭐ 走到这一步就存档：客户接下来很可能要跳去扫一扫，回来靠这个重放（见 resumeCard） */
+  saveProg();
 }
 
 /* 🔴 extra = 同一条线索的**后续事件**覆盖字段（如点了「我付好了」⇒ pay_status 改成「客户称已付」）。
