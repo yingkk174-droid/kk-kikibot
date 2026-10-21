@@ -93,6 +93,17 @@ header{
 .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
 .foot{font-size:12px;color:var(--sub);text-align:center;padding:10px 16px 6px;line-height:1.7}
 .foot a{color:var(--sub)}
+/* 收款卡：码 + 金额 + 怎么付，三样同屏。
+   ⛔ 金额是客户手输的（固定收款码不带金额），不在码旁边写死数字＝必有人付错。 */
+.pay{text-align:center}
+.pay img{
+  width:184px;height:184px;max-width:76%;margin:2px auto 10px;display:block;
+  border:1px solid var(--line);border-radius:12px;background:#fff;object-fit:contain
+}
+.pay .amt{font-size:19px;font-weight:700;color:var(--ink);letter-spacing:.3px}
+.pay .amt b{color:var(--accent);font-size:22px}
+.pay .how{font-size:12.5px;color:var(--sub);line-height:1.8;margin-top:8px;text-align:left}
+.pay .nopic{font-size:13px;color:var(--ink);line-height:1.8}
 .done{display:flex;flex-direction:column;gap:10px}
 .toast{
   position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(24,27,31,.92);color:#fff;
@@ -181,8 +192,18 @@ const PRICE = {
      额度从 AGENT[所选系统].quota 取（唯一真源在 AGENT）。 */
   E: {list:"", trial:19.9, unit:"体验码", valid:"1 个月内有效"}
 };
-/* 收款入口（微信收款链接 / 小商店 / 表单都行）。留空 ⇒ 不渲染付款按钮，走微信手动收。 */
-const PAY = "";
+/* ---------- 收款入口（2026-10-21 定：页面内给微信收款码图，付完截图回传） ----------
+   🔴 只放「收款码」（微信 → 我 → 服务 → 收款与经营 里的那个二维码，别人扫了是付钱给你）。
+      ⛔ 绝不放「付款码」（收付款页那个条码 + 数字）——那是给别人扫走你钱的，公开即资损。
+   🔴 PAY 是对象 ⇒ if(PAY) 永远为真，空配置也会渲染出一个空框。
+      渲染与否一律走 payBlock()：金额为空、或（图与微信号都没有）⇒ 整块不渲染。
+   🔴 图挂了/还没图 ⇒ 自动落到文字版（加微信要码），⛔ 绝不出现破图。 */
+const PAY = {
+  img: "",        // 收款码图：仓库内相对路径（如 pay_qr.png）或 https 外链。留空 ⇒ 走文字版
+  /* 🔴 两句做法要分开写：图版才能说「长按保存这张码」，文字版里根本没有码，说了等于让客户去找一张不存在的图 */
+  howImg:  "长按保存这张码 → 微信「扫一扫」右上角「相册」→ 付款，把付款截图发我",
+  howText: "加我后我把收款码发你 → 付款，把付款截图发我"
+};
 /* ---------- 线索自动上报（实测于 2026-10-20，改之前先看 §4.1 的 CORS 实测表） ---------- */
 /* ⛔ pushplus 直连 = token 写在这个文件里 = 页面源码公开可见（view-source 谁都能看）。
    若 token 不便公开：改 SINK="raw" + WEBHOOK=中转地址，token 只落在服务端环境变量，见 relay/lead.js。 */
@@ -298,6 +319,7 @@ function card(html){
   const row = document.createElement("div"); row.className = "row";
   const c = document.createElement("div"); c.className = "card"; c.innerHTML = html;
   row.appendChild(c); chat.appendChild(row); scroll();
+  return c;   /* 返回节点：收款卡要拿它绑图片的 onerror（⛔ 内联 onerror 在模板字符串里容易转义错） */
 }
 function typing(ms){
   const row = document.createElement("div"); row.className = "row";
@@ -530,6 +552,52 @@ function amount(b, a){
   return "";
 }
 
+/* ⭐ 付完款会发生的那一个动作（按分支各写一句）。
+   客户付完最想知道的就是「我这笔钱换来了什么动作」，⛔ 写"我们会尽快处理"＝没交付。
+   ⛔ E 必须是"发码"：码是付完才给的，写成别的＝客户等着一个不会来的东西。 */
+const PAID_ACTION = {
+  A: "开始出那两份报告",
+  B: "把那一集正片发你",
+  C: "把席位确认和开营信息发你",
+  D: "把你的排期锁住",
+  E: "把体验码发你"
+};
+
+/* 收款块（2026-10-21 定：页面内给微信收款码图）
+   🔴 三态：① 有金额 + 有图 ⇒ 图版；② 有金额 + 无图 ⇒ 文字版（加微信要码）；③ 无金额 ⇒ 整块不渲染。
+   ⛔ 别用 if(PAY) 判空：PAY 是对象，恒为真，空配置也会渲染出一个空框。
+   ⛔ 图加载失败只隐藏图，金额与做法仍在 ⇒ 永远不会出现破图（图还没上传时也不尴尬）。
+   🔴 收款码不带金额，金额靠客户手输 ⇒ 数字必须和码同屏，⛔ 只在上面气泡里说一次＝必有人付错。 */
+/* 文字版收款块（两处复用：① 本来就配了图 ② 图挂了要顶上去）
+   ⛔ 图挂了不能只把 img 藏掉 —— 上面还写着"扫这张码付"，客户会去找一张不存在的码。
+      要么整块换成文字版，要么别显示金额；选了前者（金额不能丢，客户要知道付多少）。 */
+function payText(amt, fallback){
+  if(!MY_WECHAT) return "";
+  const head = fallback
+    ? `收款码没加载出来 —— 加我微信 <b>${MY_WECHAT}</b> 我直接发你，付 `
+    : `加我微信 <b>${MY_WECHAT}</b> 领收款码，付 `;
+  const tail = fallback
+    ? "付款备注里写上你的名字，方便我对账。"
+    : `${PAY.howText}（就这个号）。付款备注里写上你的名字，方便我对账。`;
+  return `<div class="pay nopic">${head}`
+       + `<b style="color:var(--accent);font-size:17px">¥${amt}</b>`
+       + `<div class="how">${tail}</div></div>`;
+}
+function payBlock(amt){
+  if(amt === "" || amt == null) return "";
+  if(!PAY.img) return payText(amt, false);
+  /* ⛔ 金额写「应付」而不是「扫这张码付」：图万一没出来，这句话就不通了（金额本身是中性的） */
+  return `<div class="pay">`
+       + `<img src="${PAY.img}" alt="微信收款码">`
+       + `<div class="amt">应付 <b>¥${amt}</b></div>`
+       + `<div class="how">${PAY.howImg}${MY_WECHAT ? `微信 <b>${MY_WECHAT}</b>` : ""}。`
+       + `付款备注里写上你的名字，方便我对账。`
+       /* ⛔ 别在这里再写一次微信号：同一屏出现两次同一个号＝像机器人复读，也让最后那句被跳过。
+          只留一个出口名（"加我微信"），号在上文已经有了。 */
+       + `付不了就加我微信，我另发收款方式。</div>`
+       + `</div>`;
+}
+
 /* S4 交付 */
 async function deliver(){
   S.stage = "s4";
@@ -601,7 +669,20 @@ async function deliver(){
   if(pl){
     await typing(400);
     say(pl);
-    if(PAY && amt !== "") card(`<a class="btn" href="${PAY}" target="_blank" rel="noopener">付 ¥${amt} · ${BRANCH_NAME[b]}</a>`);
+    /* ⭐ 收款块 = 码 + 金额 + 怎么付 + 付完会发生什么，四样连着出。
+       ⛔ 只报价不给收款路径＝客户想付都不知道付给谁，这一步的转化全漏在这里。 */
+    const pb = payBlock(amt);
+    if(pb){
+      const pc = card(pb);
+      /* 图没传 / 图挂了 ⇒ 整块换成文字版（金额保留），⛔ 别只把 img 藏掉留一句"扫这张码" */
+      const im = pc.querySelector("img");
+      if(im) im.onerror = ()=>{
+        const w = pc.querySelector(".pay"), t = payText(amt, true);
+        if(w && t) w.outerHTML = t; else if(w) w.style.display = "none";
+      };
+      await typing(400);
+      say(`付完把<b>付款截图</b>发我${MY_WECHAT ? `微信 <b>${MY_WECHAT}</b>` : ""}，我看到就${PAID_ACTION[b] || "开始处理"}。`);
+    }
   }
   say(AFTER_TAIL);
 
@@ -634,6 +715,11 @@ function payload(){
     /* A/B/E = 体验价；C/D = 诚意金。⛔ E 定过价后必须显式写进 trial，
        原写法（A||B 之外全落 deposit）会把 E 记成诚意金，CRM 里按钱的类型筛就全错 */
     fee_type: (S.branch === "C" || S.branch === "D") ? "deposit" : "trial",
+    /* 收款状态：目前没有支付回调，付没付只能靠人工核 ⇒ 一律先记「待收款」，
+       CRM 里按这个字段跟单；⛔ 别写「已付」（页面根本收不到回调，写了就是假数据）。
+       pay_way 记的是这一步给客户看的收款路径，方便复盘哪条路转化好。 */
+    pay_status: (amt === "" || amt == null) ? "" : "待收款",
+    pay_way: (amt === "" || amt == null) ? "" : (PAY.img ? "收款码图" : (MY_WECHAT ? "微信手动" : "")),
     ts: new Date().toISOString()
   };
   if(SINK === "pushplus"){
