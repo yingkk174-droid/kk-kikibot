@@ -117,6 +117,15 @@ header{
 .pay .how{font-size:12.5px;color:var(--sub);line-height:1.8;margin-top:6px;text-align:left}
 .pay .how .p1{color:var(--ink)}
 .pay .nopic{font-size:13px;color:var(--ink);line-height:1.8}
+/* 付完确认按钮（2026-10-21）：客户付完**留在页面里**点一下，不用来回切微信。
+   ⛔ 别做成输入框 —— S4 之后 bar 已经清了，这里只给「一个动作」，不给第二选择。 */
+.cta{text-align:center}
+.cta .btn{width:100%;font-family:inherit;cursor:pointer;border:none}
+.cta .tip{font-size:12.5px;color:var(--sub);line-height:1.7;margin-top:8px;text-align:left}
+/* ⭐ 点过之后按钮变成「已受理」态：浅底 + 深字，⛔ 别只做 opacity:.55 ——
+   金底白字降到 55% 之后对比度不到 3:1，客户会以为按钮坏了/没点上。
+   ⛔ 也别继续用强调色：这块已经不是"要他点"，而是"回执"。 */
+.cta .btn.done{background:var(--accent-bg);color:var(--ink);border:1px solid var(--line);opacity:1;cursor:default}
 .done{display:flex;flex-direction:column;gap:10px}
 .toast{
   position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(24,27,31,.92);color:#fff;
@@ -213,16 +222,25 @@ const PRICE = {
    🔴 图挂了/还没图 ⇒ 自动落到文字版（加微信要码），⛔ 绝不出现破图。 */
 const PAY = {
   img: "pay_qr.png",  // 收款码图（2026-10-21 上线）：相对路径，与 index.html 同目录。留空 ⇒ 走文字版
-  /* 🔴🔴 图版文案必须**把「长按识别」排在第一条**（2026-10-21 kk 实测：扫码没法保存）。
-     原因：绝大多数客户是**微信里**扫海报进来的 ⇒ 页面就在微信内置浏览器里，
-     长按这张码 → 弹「识别图中二维码」→ 直接跳付款，**一步都不用存相册**。
-     ⛔ 上一版把"长按保存 → 扫一扫 → 右上角相册"写成唯一路径：三步、且每步都能卡住
-        （保存失败 / 相册图被压缩后识别不出 / 找不到相册入口）＝把最绕最容易失败的路指给了客户。
-     ⭐ 判据：**先写最短路径，长路径只当备用。** 备用要单独一行，别混在同一句里读不出来。 */
-  howImg:  "<span class=\"p1\">① 在微信里：长按这张码 → 点「识别图中二维码」→ 直接付</span>（不用先保存）<br>"
-         + "② 不在微信里：点码下面的「看大图」→ 存到相册 → 微信「扫一扫」右上角「相册」",
+  /* 🔴🔴 两条路谁排第一 = **按环境定，不写死**（2026-10-21 kk 实测后定的判据）：
+     ① 长按识别 = 两步、**完全不出微信**；② 存相册再扫 = 四步、**要退出微信**。
+     ⛔ 上一版把"长按保存 → 扫一扫 → 右上角相册"写成唯一路径，两个后果：
+        a) 三步、且每步都能卡住（保存失败 / 相册图压缩后识别不出 / 找不到相册入口）；
+        b) 客户一退出微信，这个页面就从会话里掉了，前六题白答 —— 这是最毒的那一条。
+     ⭐ 判据：**先给当下能走通的那条，走不通的降为备用**；备用单独一行，别混在同一句里读不出来。
+     🔴 微信外（UA 里没有 MicroMessenger）长按**根本不出**「识别图中二维码」
+        ⇒ 那时候必须把"存相册"顶到第一行，否则客户第一条就撞死。 */
+  howWx:   "<span class=\"p1\">① 长按这张码 → 点「识别图中二维码」→ 直接付</span>"
+         + "（不用存相册，付完自动回到这页，刚才聊的都还在）<br>"
+         + "② 识别不出来再走这条：点码下面的「看大图」→ 存到相册 → 微信「扫一扫」→ 右上角「相册」",
+  howOut:  "<span class=\"p1\">① 点码下面的「看大图」→ 存到相册 → 打开微信「扫一扫」"
+         + "→ 右上角「相册」选这张 → 付款</span><br>"
+         + "② 更省事的走法：把这个链接转发进微信再打开，就能直接长按识别了",
   howText: "加我后我把收款码发你 → 付款，把付款截图发我"
 };
+/* 🔴 环境判定：微信内置浏览器的 UA 里带 MicroMessenger。
+   ⛔ 别拿"能不能长按"去猜，⛔ 更别两条并列一起扔给客户（并列＝他不知道走哪条＝原地卡住）。 */
+const IN_WX = /micromessenger/i.test(navigator.userAgent || "");
 /* 🔴 预加载收款码（2026-10-21）：img 是 S4 才动态插进 DOM 的，那时才开始下载 ⇒ 客户刚聊完
    往下滑，看到的先是**一个空白方框**（截图上就是白的，我第一次看还以为图挂了）。
    客户扫码进来要答 6 题，时间足够把图缓存下来 ⇒ 页面一加载就先下，S4 直接命中缓存。
@@ -717,13 +735,57 @@ function payBlock(amt){
        + `<img src="${PAY.img}" alt="微信收款码">`
        + `<a class="zoom" href="${PAY.img}" target="_blank" rel="noopener">看不清？点这里看大图</a>`
        + `<div class="amt">应付 <b>¥${amt}</b></div>`
-       + `<div class="how">${PAY.howImg}`
-       + `<br>付完把<b>付款截图</b>发我，付款备注里写上你的名字，方便我对账。`
+       /* 🔴 这一块只讲「怎么付 + 怎么对账」，⛔ 别提"点下面那个按钮" ——
+          紧跟着的确认卡已经说了，两处都说＝客户不知道先看哪个（还把这块撑成五行小字）。
+          "付完干什么"整件事归确认卡。 */
+       + `<div class="how">${IN_WX ? PAY.howWx : PAY.howOut}`
+       + `<br>付款备注里写上你的名字，方便我对账。`
        /* 🔴 卡内⛔ 再写微信号：紧跟下面的气泡已经说了"发我微信 X"，
           同屏三次同一个号＝机器人复读，客户会跳过最后那句（2026-10-21 截图里抓到的）。
           卡内只说动作，号一律留给后面的气泡。 */
        + `付不了就加我微信，我另发收款方式。</div>`
        + `</div>`;
+}
+
+/* ⭐⭐ 付完确认（2026-10-21 用户拍板：**人工核账再发码**，⛔ 不让页面自动发码）
+   🔴 为什么必须有这个按钮：deliver() 一走完就 clearBar()，页面**没有输入框**了。
+      客户付完想说一句"我付了"都没地方说，唯一出路只剩去加你微信 ——
+      多加一道门槛就多掉一批人，而且他一退出去，这个页面的会话就找不回来了。
+      ⇒ 补一个按钮，让他**留在页面里**就能告知；
+        整条链（长按识别付款 → 自动回这页 → 点按钮 → 等码）**全程不出微信**。
+   🔴🔴 为什么不能自动出码：用的是**微信个人收款码**，**没有支付回调**
+      （没有商户号 ⇒ 系统收不到"钱到了"这个信号）⇒「点了就自动给码」技术上不成立。
+      ⛔ 绝不让页面显示"已付款"或直接吐一个码 —— 那是假数据，客户会拿它来要交付，
+         而你这头根本不知道收没收到钱 ⇒ 一定吵架。
+   ⭐ 按钮只做一件事：把「这个人自称付了 + 金额 + 称呼」推给我，我去核微信支付账单。 */
+function paidCard(amt){
+  if(amt === "" || amt == null) return null;
+  const act = PAID_ACTION[S.branch] || "开始处理";
+  const c = card(`<div class="cta">`
+    + `<button class="btn" id="paid">✅ 我付好了（¥${amt}）</button>`
+    /* ⭐ 点之前先说清"点了会怎样"：客户最怕的是点了没反应、不知道有没有生效。
+       🔴 这里⛔ 不写微信号本身：页面底部那行（#bar .hint）一直有一个号，同屏两遍＝复读。
+          但也⛔ 不能一声不吭 —— 客户读完这句会问"发到哪个微信?"
+          ⇒ 只**指路**、不复述号码："页面最下面那行有号"。点完之后才把号写进卡里
+            （那时他确实要用到这个号去加好友）。 */
+    + `<div class="tip">付完点一下，我这边马上能收到。核对完收款就${act}`
+    + `${MY_WECHAT ? ` —— 没加我微信的话，页面最下面那行有号` : ""}。</div>`
+    + `</div>`);
+  const btn = c.querySelector("#paid"), tip = c.querySelector(".tip");
+  btn.onclick = ()=>{
+    if(S.paid) return;          /* ⛔ 连点会重复推送，我这边刷屏，还会误判成两笔订单 */
+    S.paid = 1;
+    btn.disabled = true;
+    btn.classList.add("done");     /* 换成"回执"外观，见 .cta .btn.done 的注释 */
+    btn.textContent = "✅ 已收到，等他核对";
+    /* 🔴 收尾只给微信这一个真实出口：这里没有输入框，⛔ 不许写「回复」 */
+    tip.innerHTML = `收到了 —— 我去核一下收款，核对完就${act}。`
+      + (MY_WECHAT ? `还没加我微信的话，加一下 <b>${MY_WECHAT}</b>，码直接发过去。` : "");
+    send({pay_status:"客户称已付", pay_event:"paid_claim"});
+    toast("已通知，等他核对收款");
+    scroll();
+  };
+  return c;
 }
 
 /* S4 交付 */
@@ -812,8 +874,12 @@ async function deliver(){
       /* ⭐ 退款小字紧跟收款卡、在"付完动作"之前：客户手还在码上，这一句正好拦住"我要是反悔呢"。
          ⛔ 放到最后（加微信引导附近）＝多数人根本滑不到那，等于没说。 */
       if(REFUND[b]) say(`<span class="rfd">${REFUND[b]}</span>`);
+      /* ⭐ 确认按钮紧跟退款小字：客户刚看完"不退"，手就在这块屏上，顺势按下。
+         ⛔ 别放到 AFTER_TAIL 后面 —— 那时候他已经滑过去了；
+         ⛔ 也别再单独发一条"付完把截图发我微信 X"的气泡 —— 按钮已经承担这个动作，
+            两条并列＝客户不知道该点按钮还是去加微信，且同屏再多刷一次微信号。 */
       await typing(400);
-      say(`付完把<b>付款截图</b>发我${MY_WECHAT ? `微信 <b>${MY_WECHAT}</b>` : ""}，我看到就${PAID_ACTION[b] || "开始处理"}。`);
+      paidCard(amt);
     }
   }
   say(AFTER_TAIL);
@@ -834,7 +900,9 @@ async function deliver(){
   try{ localStorage.setItem(KEY, JSON.stringify(window.__LEAD__)); }catch(e){}
 }
 
-function payload(){
+/* 🔴 extra = 同一条线索的**后续事件**覆盖字段（如点了「我付好了」⇒ pay_status 改成「客户称已付」）。
+   单独一条推送，⛔ 不覆盖原线索（原线索还在，CRM 里是两条，能看出"登记 → 自称付款"的时间差）。 */
+function payload(extra){
   const a = S.ans, t = summary();
   const hi = (S.branch === "D" && /(亿级|千万级)/.test(a.scale || ""));
   const amt = amount(S.branch, a);
@@ -861,13 +929,23 @@ function payload(){
     pay_way: (amt === "" || amt == null) ? "" : (PAY.img ? "收款码图" : (MY_WECHAT ? "微信手动" : "")),
     ts: new Date().toISOString()
   };
+  if(extra) Object.assign(base, extra);
   if(SINK === "pushplus"){
+    /* ⭐ 「已付款待核销」的标题前缀必须和普通线索一眼分得开：
+       微信推送列表里扫一眼就知道这笔要去核账，⛔ 别混在「新线索」里一起刷。 */
+    const claim = !!(extra && extra.pay_event === "paid_claim");
     return Object.assign(base, {token: SINK_TOKEN,
       /* 课题 + 金额进标题：微信推送列表里一眼看出该发什么、收多少，不用点开正文 */
       /* ⭐ 区分字段进标题：B 带课题、E 带系统（发码的人一眼知道要发哪一种码） */
-      title: "新线索 · " + BRANCH_NAME[S.branch] + (a.topic ? " · " + a.topic : "")
+      title: (claim ? "💰 已付款待核销 · " : "新线索 · ") + BRANCH_NAME[S.branch] + (a.topic ? " · " + a.topic : "")
              + (a.sys ? " · " + a.sys : "") + (amt ? " · ¥" + amt : "") + (hi ? " · 高意向" : ""),
-      content: t, template: "txt"});
+      /* ⛔ 正文里必须写明「这只是客户自称，不等于到账」——
+        推送到了你微信，你随手一扫就当收钱了，回头对不上账是最难查的那种。 */
+      content: claim ? t + "\n\n【客户点了「我付好了」】⚠️ 这是他自称的，不等于到账。"
+                            + "\n待办：去微信支付账单，按 ¥" + amt + " + 备注名核一下，收到再"
+                            + (PAID_ACTION[S.branch] || "处理") + "。"
+                     : t,
+      template: "txt"});
   }
   if(SINK === "feishu"){
     return Object.assign(base, {msg_type: "text", content: {text: t}});
@@ -881,10 +959,10 @@ function payload(){
      ⛔ 少了 text，中转只能拼出一条残缺的消息，排障时会误判成"线索丢了"。 */
   return Object.assign(base, {ua: navigator.userAgent, text: t});
 }
-function send(){
+function send(extra){
   const url = (SINK === "pushplus") ? PUSHPLUS_URL : WEBHOOK;
   if(!url || (SINK === "pushplus" && !SINK_TOKEN)) return;   /* 未配置则只出摘要 + 申请链接，不静默丢数据 */
-  const body = JSON.stringify(payload());
+  const body = JSON.stringify(payload(extra));
   /* 🔴 wecom 是唯一必须绕预检的：实测企微 OPTIONS 直接 403（nginx 层），
         一旦发 application/json 触发预检 → 请求根本没到业务层，线索静默丢失。
      ⇒ 走 text/plain 的 simple request（不触发预检），实测企微能正常收到并解析。
