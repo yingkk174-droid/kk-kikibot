@@ -17,7 +17,10 @@ body{
   font:16px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
   display:flex; justify-content:center;
 }
-.wrap{width:100%; max-width:520px; min-height:100vh; display:flex; flex-direction:column}
+/* 🔴 必须是定高（不是 min-height）：选项多的时候（产品设计七个模块）底部操作区会撑高，
+   用 min-height 时 .wrap 跟着长，整条 bar 被推出视口 —— 客户只看到前两个模块，其余永远点不到。
+   定高后 #chat 自己内部滚，bar 永远贴着视口底部。100dvh 处理 iOS 地址栏伸缩，前面留 100vh 兜底。 */
+.wrap{width:100%; max-width:520px; min-height:100vh; height:100vh; height:100dvh; display:flex; flex-direction:column}
 header{
   position:sticky; top:0; z-index:5; background:rgba(247,245,240,.94);
   backdrop-filter:saturate(160%) blur(10px); border-bottom:1px solid var(--line);
@@ -135,9 +138,14 @@ header{
 /* ⭐⭐ E 分支的两个 Agent（2026-10-20 定）：**两个系统按不同单位计量，⛔ 不能混成一个"额度"。**
    产品设计按 token、跨境电商按次数 —— 说错单位等于承诺错东西，客户跑完后一定会来问。
    🔴 额度与站点的唯一真源在这里；价格另在 PRICE.E（两个同价 19.9 / 个体验码）。 */
+/* ⭐ 两套 Agent 的「站点 / 额度 / 模块清单」只写在这一个常量里（2026-10-21 补模块）。
+   🔴 模块清单是第二问的选项源，⛔ 不许在 EXT.E 里再抄一份——两边一旦不一致，
+      客户看到的功能跟站点里实际的会对不上。跨境电商那边四个模块同样收在这里，保持对称。 */
 const AGENT = {
-  "AI 产品设计": {site:"https://www.kumia.design",          quota:"10,000 token"},
-  "AI 跨境电商": {site:"https://kuajing-ai.up.railway.app", quota:"10 次"}
+  "AI 产品设计": {site:"https://www.kumia.design",          quota:"10,000 token",
+    mods:["竞品采集","矢量线稿","融合设计","改花改款","2D/3D 模特效果图","工业CAD制版","工艺BOM表"]},
+  "AI 跨境电商": {site:"https://kuajing-ai.up.railway.app", quota:"10 次",
+    mods:["选品","Listing","投放","复盘"]}
 };
 const LINKS = {
   A: "",   // 链接诊断申请表
@@ -229,17 +237,20 @@ const EXT = {
       {k:"want",  t:"最想在现场解决哪一块？", type:"text", ph:"比如：选品排序 / 团队分工 / 利润"}],
   /* ⭐ E 第一问 = 选系统（2026-10-20 定）：两个 Agent 是两套业务、两种计量单位，
      ⛔ 必须先分开问，合并成一个"AI Agent 体验"＝额度说不清，也浪费一道筛选题。
-     第二问按所选系统分化 ⇒ `t`/`type`/`opt` 允许写成函数（nextQ 里用 S.ans 求值）。
-     ⛔ 产品设计的第二问不能照抄跨境电商的「选品 / Listing / 投放 / 复盘」——那是另一套业务，
-        客户选不出对的，只会乱点一个 ⇒ 产品设计改为自由输入兜住。 */
+     第二问按所选系统分化 ⇒ `t`/`opt`/`hint` 写成函数（nextQ 里用 S.ans 求值）。
+     ⛔ 两边模块⛔ 不许互相抄：产品设计七个模块是「款从哪来 → 怎么出图 → 怎么下厂」的一条链，
+        跨境电商是「卖什么 → 怎么写 → 怎么推 → 怎么复盘」，抄过去客户只会乱点一个。
+     ⭐ 选项一律从 AGENT[a.sys].mods 取（唯一真源），⛔ 不在 EXT 里再列一遍。 */
   E: [{k:"sys",   t:"两个 Agent 我都开了体验，先试哪一个？", type:"opt",
        opt:["AI 产品设计","AI 跨境电商"],
        hint:"两个计量方式不同：产品设计按 token，跨境电商按次数"},
-      {k:"scene", t:a => a.sys === "AI 产品设计" ? "想让它先帮你做哪一块？用一句话写就行"
+      {k:"scene", t:a => a.sys === "AI 产品设计" ? "想让它先帮你做哪一块？先挑一个最想试的"
                                                  : "你最想让它先跑哪一块？",
-       type:a => a.sys === "AI 产品设计" ? "text" : "opt",
-       opt:["选品","Listing","投放","复盘"],
-       ph:"比如：先把这一季的款型和卖点理出来"}],
+       type:"opt",
+       opt:a => (AGENT[a.sys] || {}).mods || [],
+       hint:a => a.sys === "AI 产品设计"
+         ? "从找款到出图到制版都能跑；不确定就先挑最想试的那一个"
+         : ""}],
   D: [{k:"scale", t:"你们现在大概什么体量？", type:"opt", opt:["亿级以上","千万级","百万级","刚起步 / 说不清"]},
       {k:"want",  t:"最想解决的是哪一块？", type:"text", ph:"比如：品牌份额 / 组织 / 利润"}]
 };
@@ -294,6 +305,13 @@ function typing(ms){
 function clearBar(){ bar.innerHTML = ""; }
 function options(list, onPick, hint){
   const w = document.createElement("div"); w.className = "opts";
+  /* ⭐ 选项多（>5，产品设计七个模块）才切两列 + 限高自滚；四选一那种竖排更好点，
+     ⛔ 别无条件写成两列——四选一改成两列反而像标签云。
+     限高是第二道保险：小屏（375×667）上七项单列会占掉半屏，把上面的对话全顶没。 */
+  if(list.length > 5){
+    w.style.display = "grid"; w.style.gridTemplateColumns = "1fr 1fr"; w.style.gap = "8px";
+    w.style.maxHeight = "38vh"; w.style.overflowY = "auto";
+  }
   list.forEach(txt=>{
     const b = document.createElement("button"); b.className = "opt";
     const m = txt.match(/^([A-E])\s+(.*)$/);
@@ -366,7 +384,7 @@ async function nextQ(){
   say(t);
   S.stage = "s2";
   if(ty === "opt"){
-    options(ev(q.opt, []), v=>{ S.ans[q.k] = v; S.i++; clearBar(); setTimeout(nextQ, 300); }, q.hint);
+    options(ev(q.opt, []), v=>{ S.ans[q.k] = v; S.i++; clearBar(); setTimeout(nextQ, 300); }, ev(q.hint, ""));
   }else{
     askText(q.ph || "输入…", v=>{ S.ans[q.k] = v; S.i++; setTimeout(nextQ, 300); });
   }
