@@ -134,7 +134,10 @@ header{
    ⛔ 绝不允许填占位串：一个点开是 404 的"申请按钮"比没有按钮更伤信任。 */
 const LINKS = {
   A: "",   // 链接诊断申请表
-  B: "",   // 课程试听
+  /* ⭐ B 按课题分（2026-10-20 定）：客户选的课题就是路由，四个课题各给一集试听。
+     留空 = 不渲染「看试听」按钮，走微信发文件（⛔ 空链接比没按钮更伤信任）。
+     规格见 B试听_交付规格/B1_课题试听清单.md */
+  B: {运营:"", 经营:"", 战略:"", 品牌:""},
   C: "",   // AI Agent 体验名额
   D: ""    // 咨询预约（留电话等回联）
 };
@@ -180,14 +183,28 @@ const GEN = [
 const EXT = {
   A: [{k:"url",   t:"方便把链接发我吗？（店铺或商品页都行，没有可以写「暂无」）", type:"text", ph:"https:// 或 暂无"},
       {k:"block", t:"你觉得现在卡在哪？", type:"opt", opt:["没曝光","有点击没转化","有单不稳定","说不清"]}],
+  /* ⭐ B 第二项由「想解决哪一块（自由文本）」改为「课题四选一」（2026-10-20 定）：
+     ① 客户一次点击 = 一次分季路由，不用我们回头再猜他该看哪一集；
+     ② ⛔ 只让选 1 个 —— 多选会稀释"他最想看什么"，线索就失去排序依据。 */
   B: [{k:"role",  t:"你的角色是？", type:"opt", opt:["老板","运营负责人","一线运营","其他"]},
-      {k:"want",  t:"现在最想先解决哪一块？", type:"text", ph:"比如：广告投放 / 团队带人 / 选品"}],
+      {k:"topic", t:"想先看哪个课题？选一个就行。", type:"opt", opt:["运营","经营","战略","品牌"],
+                  hint:"四个课题各是一季，先挑最对胃口的那个看"}],
   C: [{k:"scene", t:"你最想让它先跑哪一块？", type:"opt", opt:["选品","Listing","投放","复盘"]},
       {k:"now",   t:"现在主要靠什么工具或人工做？", type:"text", ph:"比如：表格 + 两个人"}],
   D: [{k:"scale", t:"你们现在大概什么体量？", type:"opt", opt:["亿级以上","千万级","百万级","刚起步 / 说不清"]},
       {k:"want",  t:"最想解决的是哪一块？", type:"text", ph:"比如：品牌份额 / 组织 / 利润"}]
 };
 const BRANCH_NAME = {A:"链接诊断", B:"课程试听", C:"AI Agent 体验", D:"咨询预约"};
+
+/* ⭐ 课题 → 试听集（2026-10-20 定，规格见 B试听_交付规格/B1_课题试听清单.md）
+   🔴 时长取「29_交付成片-唯一索引」的实测值，⛔ 不凭印象写（全站曾普遍写 5–11 分钟，实测 12–22 分钟）。
+   ⛔ 一次只发一集：选了运营就发运营那集，别顺手把别的课题也塞过去（信息过载 = 都不看）。 */
+const TRACK = {
+  "运营": {ep:"EP1《怎么知道下一个该做什么款》", min:"14"},
+  "经营": {ep:"S1《省下来的那一块钱落在哪一侧》", min:"12"},
+  "战略": {ep:"T1《换个地方你还赢吗》", min:"19"},
+  "品牌": {ep:"B1《抹掉Logo你还认得出吗》", min:"22"}
+};
 const RULES = [
   [/链接|Listing|listing|曝光|点击|转化|排名|广告|ACOS|acos|不出单|卡/, "A"],
   [/课程|课件|试听|听一下|学|培训|上课|共创|营/, "B"],
@@ -257,7 +274,7 @@ async function s0(){
      ⛔ 不要留 href="tel:" 的空号，点下去毫无反应（2026-10-20 用户实测踩到） */
   if(MY_TEL){ const ft = document.getElementById("footTel"); if(ft) ft.innerHTML = `<a href="tel:${MY_TEL}">转人工</a>`; }
   await typing(500);
-  say("你好，我是 <b>Kiki-Bot</b>，KK 团队的 AI 顾问 👋<br>我可以帮你对接四件事：链接诊断、课程试听、自研 AI Agent 体验名额、咨询预约。<br>大概 30 秒问清情况，我按你的情况给你对应的安排（诊断报告 / 试听入口 / 体验名额 / 电话回联）。过程中不会向第三方泄露你的信息。<br><br>先问一下：你现在最想解决的是哪一类？");
+  say("你好，我是 <b>Kiki-Bot</b>，KK 团队的 AI 顾问 👋<br>我可以帮你对接四件事：链接诊断、课程试听、自研 AI Agent 体验名额、咨询预约。<br>大概 30 秒问清情况，我按你的情况给你对应的安排（诊断报告 / 试听一集 / 体验名额 / 电话回联）。过程中不会向第三方泄露你的信息。<br><br>先问一下：你现在最想解决的是哪一类？");
   if(PRE && BRANCH_NAME[PRE]){          /* 深链直达分支，省掉一次选择 */
     setTimeout(()=>{ say(`你要的是 <b>${BRANCH_NAME[PRE]}</b> 对吧？直接开始 👇`, true); pickBranch(PRE); }, 320);
     return;
@@ -291,7 +308,7 @@ async function nextQ(){
   say(q.t);
   S.stage = "s2";
   if(q.type === "opt"){
-    options(q.opt, v=>{ S.ans[q.k] = v; S.i++; clearBar(); setTimeout(nextQ, 300); });
+    options(q.opt, v=>{ S.ans[q.k] = v; S.i++; clearBar(); setTimeout(nextQ, 300); }, q.hint);
   }else{
     askText(q.ph || "输入…", v=>{ S.ans[q.k] = v; S.i++; setTimeout(nextQ, 300); });
   }
@@ -306,6 +323,9 @@ async function confirm_(){
   const detail = [];
   if(a.scale) detail.push(a.scale);
   if(a.role)  detail.push(a.role);
+  /* ⭐ B 选的课题必须上复述卡：这是这一条线索的路由依据，
+     卡片上不显示，客户只能凭印象点"对"，我们这边也就少了排序信息。 */
+  if(a.topic) detail.push("课题「" + a.topic + "」");
   if(a.scene) detail.push(a.scene);
   if(a.want)  detail.push(a.want);
   if(a.block) detail.push("卡在「" + a.block + "」");
@@ -328,6 +348,7 @@ async function confirm_(){
      复述卡出来却没有确认按钮，客户卡死在 s3。改回 S.branch。 */
   say(S.branch === "A" ? "回复「对」我就按这个链接给你出两份报告；哪里不对直接说，我改。"
     : S.branch === "D" ? "回复「对」我就按这个登记，同学会在 1 个工作日内电话联系你；哪里不对直接说，我改。"
+    : S.branch === "B" ? "回复「对」我就把这个课题的试听那一集发你；哪里不对直接说，我改。"
     : "回复「对」我就把申请入口发你；哪里不对直接说，我改。");
   options(["对，没问题","不对，我要改"], async v=>{
     clearBar();
@@ -355,7 +376,15 @@ async function confirm_(){
 const AFTER = {
   /* ⭐ A 分支交付物 = 两份报告（2026-10-20 定），规格见 A诊断_交付规格/ */
   A: "链接收到了，我这边给你出<b>两份报告</b>：<br>① <b>单款诊断</b>——跟 1–2 条竞品比，看这款卡在哪一环；<br>② <b>Alexa 诊断优化</b>——AI 导购来了，这款接不接得住。<br>1 个工作日内发你。<br>要是链接不好复制，把<b>款式名</b>发我也行。",
-  B: "试听入口在上面，按你的平台和品类选题就行。听完有具体问题可以直接问我。",
+  /* ⭐ B 按所选课题报出「哪一集 + 多少分钟」（2026-10-20 定）：
+     ⛔ 原来只说"试听入口在上面"等于没交付——客户不知道自己在等什么，
+        也不知道这一集跟他刚选的课题是什么关系。 */
+  B: function(t){
+    const k = TRACK[t];
+    if(!k) return "试听入口在上面，选你感兴趣的课题就行。听完有具体问题可以直接问我。";
+    return `试听给你 <b>${k.ep}</b>，约 ${k.min} 分钟，1 个工作日内发你（微信发你文件或链接）。`
+         + `<br>先发这一集，你先看讲法对不对胃口；合适再聊后面的。`;
+  },
   C: "体验名额按登记顺序放，开通后先给你一份「Agent 能接哪些活」的清单，再决定要不要上。",
   D: "电话之前你可以先想清楚三件事：现在的体量、最想改的<b>一个</b>指标、能投入多少时间。"
 };
@@ -370,7 +399,9 @@ async function deliver(){
 
   /* ⭐ D（咨询预约）体量判定：判据是产能，不是"值不值得服务"。
      ⛔ 任何一档都不能出现"你不符合条件" —— 那等于当众否定，也掐掉一条能养的线索。 */
-  let link = LINKS[b], note = "", hi = "";
+  /* ⭐ B 的链接按课题取（LINKS.B 是对象，不是字符串）。
+     ⛔ 直接 link = LINKS[b] 会拿到一个对象，href 变成 "[object Object]" —— 死链。 */
+  let link = (b === "B") ? (LINKS.B[S.ans.topic] || "") : LINKS[b], note = "", hi = "";
   if(b === "D"){
     const sc = a.scale || "";
     if(sc === "亿级以上" || sc === "千万级"){
@@ -378,21 +409,30 @@ async function deliver(){
     }else if(sc === "百万级"){
       note = "先把你的情况过一遍，如果更适合先上课我会直说。";
     }else if(sc === "刚起步 / 说不清"){
-      link = LINKS.B;
-      note = "这个阶段先把打法和口径理顺，比定制陪跑划算 —— 课程试听入口先给你，同时我也把你的咨询意向登记下来了。";
+      /* D 分支没问课题 ⇒ 取 B 里第一个配了地址的课题（没配就是空，按钮不渲染） */
+      link = Object.values(LINKS.B).find(v=>v) || "";
+      /* ⚠️ D 分支没问课题，⛔ 别承诺"试听入口先给你"—— B 的链接是按课题分的，此刻根本没有"那个入口"。
+         ⛔ 也别让客户"回复 B"：S4 已经没有输入框了，让他回复等于把他引到死路。
+         ⇒ 交给加微信/电话那一环问课题（话术见 B试听_交付规格 §4）。 */
+      note = "这个阶段先把打法和口径理顺，比定制陪跑划算 —— 加你之后我按你感兴趣的课题（运营 / 经营 / 战略 / 品牌）发一集试听；咨询意向我也登记下来了。";
     }
     /* ⭐ 用户 2026-10-20 拍板：D = 留电话等回联（不做选时段，排期走人工） */
     note += "我们会在 1 个工作日内电话联系你（工作日 10:00–19:00）。";
   }
 
   /* ⭐ A 分支没有申请表（交付物是两份报告）：⛔ 别再说"申请入口"，会让人去找一个不存在的入口 */
-  say(b === "A" ? `✅ 已登记：<b>${BRANCH_NAME[b]}</b>` : `✅ 申请入口：<b>${BRANCH_NAME[b]}</b>`);
+  /* ⭐ B 也不用"申请"这个词：试听是登记了就发，不存在申请环节。
+     ⛔ 说"申请入口"会让客户去找一个不会来的入口（A 分支已踩过同一个坑）。 */
+  say((b === "A" || b === "B")
+      ? `✅ 已登记：<b>${BRANCH_NAME[b]}</b>` + (b === "B" && a.topic ? ` · ${a.topic}` : "")
+      : `✅ 申请入口：<b>${BRANCH_NAME[b]}</b>`);
   if(note) say(note);
 
   const box = document.createElement("div"); box.className = "row";
   const d = document.createElement("div"); d.className = "done"; d.style.flex = "1"; d.style.maxWidth = "82%";
   /* ⛔ 没有真链接就不渲染这个按钮（LINKS 为空时 link 为 undefined）——死链比没按钮更伤信任 */
-  d.innerHTML = (link ? `<a class="btn" href="${link}" target="_blank" rel="noopener">填写申请 · ${BRANCH_NAME[b]}</a>` : "")
+  /* ⭐ B 分支按钮写「看试听 · XX课题」，⛔ 别写"填写申请"——试听不用申请，那是 A/C 的动作 */
+  d.innerHTML = (link ? `<a class="btn" href="${link}" target="_blank" rel="noopener">${b === "B" ? "看试听 · " + (a.topic || "课程") : "填写申请 · " + BRANCH_NAME[b]}</a>` : "")
               + `<button class="btn ghost" id="cp">复制我的信息</button>`;
   box.appendChild(d); chat.appendChild(box); scroll();
 
@@ -401,7 +441,9 @@ async function deliver(){
   await typing(400);
   /* ⛔ D 分支不能再说"1–2 个工作日对接"：上面刚承诺"1 个工作日内电话联系"，
      两句并列就是自相矛盾，客户只会记住被拖的那句。 */
-  say((AFTER[b] || AFTER.B) + AFTER_TAIL);
+  /* AFTER.B 是函数（按课题报集名），其余是字符串 ⇒ 先判类型再拼，⛔ 直接 + 会把函数体拼进话术 */
+  const af = AFTER[b] || AFTER.B;
+  say((typeof af === "function" ? af(a.topic) : af) + AFTER_TAIL);
 
   const f = document.createElement("div"); f.className = "hint";
   /* ⭐ 没有企微活码时，这是唯一能沉淀好友关系的一步：聊完顺手把人加到你的微信。
@@ -423,11 +465,13 @@ function payload(){
     channel: CH, branch: S.branch, branch_name: BRANCH_NAME[S.branch], intent: hi ? "high" : "normal",
     name: a.name, plat: a.plat, cat: a.cat, contact: a.ct,
     scale: a.scale, stage: a.stage, block: a.block, role: a.role, want: a.want,
+    topic: a.topic, trial_ep: (TRACK[a.topic] || {}).ep || "",
     ts: new Date().toISOString()
   };
   if(SINK === "pushplus"){
     return Object.assign(base, {token: SINK_TOKEN,
-      title: "新线索 · " + BRANCH_NAME[S.branch] + (hi ? " · 高意向" : ""),
+      /* 课题进标题：微信推送列表里一眼看出该发哪一集，不用点开看正文 */
+      title: "新线索 · " + BRANCH_NAME[S.branch] + (a.topic ? " · " + a.topic : "") + (hi ? " · 高意向" : ""),
       content: t, template: "txt"});
   }
   if(SINK === "feishu"){
@@ -474,7 +518,7 @@ function summary(){
     "平台 / 品类：" + (a.plat || "-") + " / " + (a.cat || "-"),
     "联系方式：" + (a.ct || "-"),
     S.branch === "A" ? "链接：" + (a.url || "-") + "\n卡点：" + (a.block || "-") :
-    S.branch === "B" ? "角色：" + (a.role || "-") + "\n想解决：" + (a.want || "-") :
+    S.branch === "B" ? "角色：" + (a.role || "-") + "\n课题：" + (a.topic || "-") + "（试听 " + ((TRACK[a.topic] || {}).ep || "待定") + "）" :
     S.branch === "C" ? "场景：" + (a.scene || "-") + "\n现用工具：" + (a.now || "-") :
                        "体量：" + (a.scale || "-") + "\n想解决：" + (a.want || "-")
   ].join("\n");
