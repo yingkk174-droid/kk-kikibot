@@ -142,8 +142,8 @@ const LINKS = {
 /* ⛔ pushplus 直连 = token 写在这个文件里 = 页面源码公开可见（view-source 谁都能看）。
    若 token 不便公开：改 SINK="raw" + WEBHOOK=中转地址，token 只落在服务端环境变量，见 relay/lead.js。 */
 const SINK    = "pushplus"; // wecom | pushplus | feishu | raw  ← 换接收端只改这个，地址与 body 格式自动跟着换
-const SINK_TOKEN = "";      // pushplus 的 token（32 位）。留空则只出「复制我的信息」，不静默丢数据
-const MY_WECHAT  = "";      // 你的微信号。留空则 S4 不出现「加我微信」引导（不显示好过显示空）
+const SINK_TOKEN = "12c179231f6640a7a5520b5e6640d268";      // pushplus 的 token（32 位）。留空则只出「复制我的信息」，不静默丢数据
+const MY_WECHAT  = "K2XAI_123456789";      // 你的微信号。留空则 S4 不出现「加我微信」引导（不显示好过显示空）
 /* pushplus / Server酱 端点是固定的，内置掉：省得手抄 URL 抄错一个字母，线索全送进黑洞。 */
 const PUSHPLUS_URL = "https://www.pushplus.plus/send";
 const WEBHOOK = "";         // 仅 wecom / feishu / raw 需要；pushplus 不用填（走内置端点）
