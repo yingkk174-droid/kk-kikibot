@@ -139,6 +139,8 @@ const LINKS = {
   D: ""    // 咨询预约（留电话等回联）
 };
 /* ---------- 线索自动上报（实测于 2026-10-20，改之前先看 §4.1 的 CORS 实测表） ---------- */
+/* ⛔ pushplus 直连 = token 写在这个文件里 = 页面源码公开可见（view-source 谁都能看）。
+   若 token 不便公开：改 SINK="raw" + WEBHOOK=中转地址，token 只落在服务端环境变量，见 relay/lead.js。 */
 const SINK    = "pushplus"; // wecom | pushplus | feishu | raw  ← 换接收端只改这个，地址与 body 格式自动跟着换
 const SINK_TOKEN = "";      // pushplus 的 token（32 位）。留空则只出「复制我的信息」，不静默丢数据
 /* pushplus / Server酱 端点是固定的，内置掉：省得手抄 URL 抄错一个字母，线索全送进黑洞。 */
@@ -403,7 +405,9 @@ function payload(){
     if(MENTION_HIGH && hi) txt.mentioned_list = ["@all"];
     return Object.assign(base, {msgtype: "text", text: txt});
   }
-  return Object.assign(base, {ua: navigator.userAgent});   /* raw */
+  /* raw：只发结构化字段 + 纯文本。中转（relay/lead.js）靠 text 拼推送消息，
+     ⛔ 少了 text，中转只能拼出一条残缺的消息，排障时会误判成"线索丢了"。 */
+  return Object.assign(base, {ua: navigator.userAgent, text: t});
 }
 function send(){
   const url = (SINK === "pushplus") ? PUSHPLUS_URL : WEBHOOK;
