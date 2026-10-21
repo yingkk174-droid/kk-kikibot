@@ -140,7 +140,7 @@ const LINKS = {
   B: {运营:"", 经营:"", 战略:"", 品牌:""},
   C: "",   // 线下共创营（诚意金 500）
   D: "",   // 咨询预约（诚意金 1000，留电话等回联）
-  E: ""    // AI Agent 体验名额
+  E: ""    // AI Agent 体验码发放页（19.9 / 个，1 个月内有效，带额度）
 };
 
 /* ⭐⭐ 价格口径（2026-10-20 定）：**⛔ 不赠免费体验，一律收体验价 / 诚意金**。
@@ -157,9 +157,13 @@ const PRICE = {
   /* 诚意金：可抵 / 可退两个出口都要写，⛔ 只说"诚意金"不给退路＝听着像押金 */
   C: {deposit:500,  what:"线下共创营席位", back:"开营前退出可退，到场可抵课程费"},
   D: {deposit:1000, what:"咨询预约排期",   back:"不合适提前说可退，成交可抵咨询费"},
-  /* ⏳ E 的体验价待定 ⇒ trial 为空就不报价，只走"名额按登记顺序放"的旧口径。
-     ⛔ 不许填一个猜的数：价格说错比不说贵得多。 */
-  E: {list:"", trial:"", what:"AI Agent 体验名额"}
+  /* ⭐ E 卖的是「体验码」不是「名额」（2026-10-20 定）：19.9 一个码，1 个月内有效，带额度上限。
+     🔴 原价未定 ⇒ list 留空，气泡只写体验价。⛔ 不许拿 A 的 199 或 B 的课价来凑删除线
+        （那是别的东西的原价，写成原价＝自己造一个假锚点） */
+  E: {list:"", trial:19.9, unit:"体验码",
+      valid:"1 个月内有效",
+      quota:"额度按次数或 token 计，发码时把具体多少一并说清",
+      what:"AI Agent 体验码"}
 };
 /* 收款入口（微信收款链接 / 小商店 / 表单都行）。留空 ⇒ 不渲染付款按钮，走微信手动收。 */
 const PAY = "";
@@ -305,7 +309,7 @@ async function s0(){
   await typing(500);
   /* ⛔ 开场不报价（S4 才报）：先让人知道能得到什么，再说多少钱。
      一上来就报 19.9 / 500 会把还在观望的人吓跑，线索直接少一半。 */
-  say("你好，我是 <b>Kiki-Bot</b>，KK 团队的 AI 顾问 👋<br>我可以帮你对接五件事：链接诊断、课程试听、线下共创营、咨询预约、自研 AI Agent 体验名额。<br>大概 30 秒问清情况，我按你的情况给你对应的安排（诊断报告 / 试听一集 / 席位 / 电话回联 / 体验名额），并说清这一步的费用。过程中不会向第三方泄露你的信息。<br><br>先问一下：你现在最想解决的是哪一类？");
+  say("你好，我是 <b>Kiki-Bot</b>，KK 团队的 AI 顾问 👋<br>我可以帮你对接五件事：链接诊断、课程试听、线下共创营、咨询预约、自研 AI Agent 体验码。<br>大概 30 秒问清情况，我按你的情况给你对应的安排（诊断报告 / 试听一集 / 席位 / 电话回联 / 体验码），并说清这一步的费用。过程中不会向第三方泄露你的信息。<br><br>先问一下：你现在最想解决的是哪一类？");
   if(PRE && BRANCH_NAME[PRE]){          /* 深链直达分支，省掉一次选择 */
     setTimeout(()=>{ say(`你要的是 <b>${BRANCH_NAME[PRE]}</b> 对吧？直接开始 👇`, true); pickBranch(PRE); }, 320);
     return;
@@ -383,6 +387,7 @@ async function confirm_(){
     : S.branch === "D" ? "回复「对」我就按这个登记，同学会在 1 个工作日内电话联系你；哪里不对直接说，我改。"
     : S.branch === "B" ? "回复「对」我就把这个课题的试听那一集发你；哪里不对直接说，我改。"
     : S.branch === "C" ? "回复「对」我就把席位给你留上，并说清诚意金怎么交；哪里不对直接说，我改。"
+    : S.branch === "E" ? "回复「对」我就把这个体验码发你，并说清有效期和额度；哪里不对直接说，我改。"
     : "回复「对」我就把申请入口发你；哪里不对直接说，我改。");
   options(["对，没问题","不对，我要改"], async v=>{
     clearBar();
@@ -422,7 +427,9 @@ const AFTER = {
   /* ⭐ C = 线下共创营（2026-10-20 定，原 C 是 Agent 体验，已拆到 E） */
   C: "席位我先给你留着，开营前我会把时间地点和要带的资料发你。<br>现场一次只解决一个问题，所以你先把最想解决的那一块想清楚，带着它来。",
   D: "电话之前你可以先想清楚三件事：现在的体量、最想改的<b>一个</b>指标、能投入多少时间。",
-  E: "体验名额按登记顺序放，开通后先给你一份「Agent 能接哪些活」的清单，再决定要不要上。"
+  /* ⛔ 原写「体验名额按登记顺序放」——那是免费的口气，与上面收 19.9 自相矛盾。
+     ⭐ 改说「体验码」：一个码 = 一份额度，有效期和额度说到明处，用完要再加也说得通。 */
+  E: "付了我就给你发一个体验码，开通后先附一份「Agent 能接哪些活」的清单，你按清单先跑最想跑的那一块；额度用完了要续，跟我说一声就行。"
 };
 const AFTER_TAIL = "还有别的问题可以直接问我；要找人聊，回复「人工」我转过去。";
 
@@ -445,7 +452,12 @@ function priceLine(b, a){
   if(b === "C" || b === "D")
     return `💰 这一步的费用：${p.what}诚意金 <b>¥${p.deposit}</b>`
          + `<br>${p.back}。`;
-  return "";   /* E 的体验价待定 ⇒ 不报价，⛔ 不许填猜的数 */
+  if(b === "E")
+    /* ⛔ E 没有原价 ⇒ 不画删除线（p.list 空就整段不出现），别为了排版好看硬造一个原价。
+       ⭐ 体验码必须说清「有效期 + 额度上限」：只说 19.9，客户会当成永久不限量，用完必来吵。 */
+    return `💰 这一步的费用：${p.list ? `原价 <s>¥${p.list}</s> ` : ""}<b>体验价 ¥${p.trial}</b> 一个${p.unit}`
+         + `<br>${p.valid}，${p.quota}。`;
+  return "";
 }
 /* 应付金额（给付款按钮和推送标题用）。⛔ 与 priceLine 同源，别两处各算一遍 */
 function amount(b, a){
@@ -453,6 +465,7 @@ function amount(b, a){
   if(b === "A") return p.trial;
   if(b === "B"){ const k = p[a.topic]; return k ? k.trial : ""; }
   if(b === "C" || b === "D") return p.deposit;
+  if(b === "E") return p.trial;
   return "";
 }
 
@@ -490,19 +503,22 @@ async function deliver(){
   /* ⭐ B 也不用"申请"这个词：试听是登记了就发，不存在申请环节。
      ⛔ 说"申请入口"会让客户去找一个不会来的入口（A 分支已踩过同一个坑）。 */
   /* ⭐ 措辞跟着"这一步客户给的是什么"走：
-     A/B = 付费体验（已登记）／C/D = 诚意金锁位（已锁定）／E = 名额（申请入口）。
-     ⛔ 统一说"申请入口"会让 A/C/D 客户去找一个不会来的入口（同一个坑已踩两次）。 */
-  say(b === "E"
-      ? `✅ 申请入口：<b>${BRANCH_NAME[b]}</b>`
-      : `✅ ${(b === "C" || b === "D") ? "已锁定" : "已登记"}：<b>${BRANCH_NAME[b]}</b>`
-        + (b === "B" && a.topic ? ` · ${a.topic}` : ""));
+     A/B/E = 付费体验（已登记）／C/D = 诚意金锁位（已锁定）。
+     ⛔ 统一说"申请入口"会让 A/C/D 客户去找一个不会来的入口（同一个坑已踩两次）。
+     ⛔ E 定过价后不能再落进"申请入口"那一档——客户付了钱却在等一个入口，等于没交付。 */
+  say(`✅ ${(b === "C" || b === "D") ? "已锁定" : "已登记"}：<b>${BRANCH_NAME[b]}</b>`
+      + (b === "B" && a.topic ? ` · ${a.topic}` : ""));
   if(note) say(note);
 
   const box = document.createElement("div"); box.className = "row";
   const d = document.createElement("div"); d.className = "done"; d.style.flex = "1"; d.style.maxWidth = "82%";
   /* ⛔ 没有真链接就不渲染这个按钮（LINKS 为空时 link 为 undefined）——死链比没按钮更伤信任 */
-  /* ⭐ B 分支按钮写「看试听 · XX课题」，⛔ 别写"填写申请"——试听不用申请，那是 A/C 的动作 */
-  d.innerHTML = (link ? `<a class="btn" href="${link}" target="_blank" rel="noopener">${b === "B" ? "看试听 · " + (a.topic || "课程") : "填写申请 · " + BRANCH_NAME[b]}</a>` : "")
+  /* ⭐ 按钮文案跟着交付物走：B=看试听 · 课题／C/D=填写申请／E=领体验码。
+     ⛔ E 写"填写申请"＝客户以为还要再走一轮审批，付了钱还被卡一道。 */
+  const btnTxt = b === "B" ? "看试听 · " + (a.topic || "课程")
+               : b === "E" ? "领体验码 · " + BRANCH_NAME[b]
+               : "填写申请 · " + BRANCH_NAME[b];
+  d.innerHTML = (link ? `<a class="btn" href="${link}" target="_blank" rel="noopener">${btnTxt}</a>` : "")
               + `<button class="btn ghost" id="cp">复制我的信息</button>`;
   box.appendChild(d); chat.appendChild(box); scroll();
 
@@ -548,7 +564,9 @@ function payload(){
     topic: a.topic, trial_ep: (TRACK[a.topic] || {}).ep || "",
     seat: a.seat, scene: a.scene, now: a.now, amount: amt,
     /* 收的是什么钱：trial=体验价 / deposit=诚意金 / 空=未报价。CRM 里按这个筛，⛔ 别靠分支名猜 */
-    fee_type: (S.branch === "A" || S.branch === "B") ? "trial" : (S.branch === "C" || S.branch === "D") ? "deposit" : "",
+    /* A/B/E = 体验价；C/D = 诚意金。⛔ E 定过价后必须显式写进 trial，
+       原写法（A||B 之外全落 deposit）会把 E 记成诚意金，CRM 里按钱的类型筛就全错 */
+    fee_type: (S.branch === "C" || S.branch === "D") ? "deposit" : "trial",
     ts: new Date().toISOString()
   };
   if(SINK === "pushplus"){
@@ -598,6 +616,8 @@ function feeText(b, a){
   if(amt === "") return "应付：未报价（体验价待定）";
   if(b === "A") return "应付：¥" + amt + "（体验价，原价 ¥" + PRICE.A.list + "）";
   if(b === "B"){ const k = PRICE.B[a.topic] || {}; return "应付：¥" + amt + "（试听体验价，原价 ¥" + (k.list || "-") + "）"; }
+  /* ⛔ 别让 E 掉进下面那句「诚意金」——E 收的是体验价不是诚意金，推送标题写错＝你照着错的钱去收 */
+  if(b === "E") return "应付：¥" + amt + "（体验码，1 个月内有效）";
   return "应付：¥" + amt + "（诚意金，" + PRICE[b].back + "）";
 }
 function summary(){
