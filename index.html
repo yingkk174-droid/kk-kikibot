@@ -45,6 +45,9 @@ header{
 }
 .row.me .bub{background:var(--user); color:#fff; border-color:var(--user); border-bottom-left-radius:16px; border-bottom-right-radius:6px}
 .bub b{color:var(--accent); font-weight:600}
+/* 退款口径小字（2026-10-21 定：体验价不退）。⭐ 刻意做小做灰：
+   它是「付款前必须知道」，不是拿来劝付的卖点 ⇒ ⛔ 加粗/放大＝把风险写到脸上，白劝退一批人。 */
+.rfd{font-size:12.5px;color:var(--sub);line-height:1.7}
 .row.me .bub b{color:#D8BE82}
 .typing{display:inline-flex;gap:4px;align-items:center;height:20px}
 .typing i{width:6px;height:6px;border-radius:50%;background:#C3BCAF;animation:t 1.2s infinite}
@@ -564,6 +567,19 @@ const PAID_ACTION = {
   E: "把体验码发你"
 };
 
+/* ⭐⭐ 退款口径（2026-10-21 用户拍板：**体验价一律不退**）
+   🔴🔴 必须写在**付款之前**：付完才说不退＝客户当被骗，19.9 也要吵到微信投诉。
+   ⭐ 但只做灰字小行（.rfd），⛔ 不加粗不放大 —— 这是要告知，不是要拿来劝退。
+   🔴 C/D 留空：它们是诚意金，`priceLine` 里已经写了「可退可抵」，⛔ 这里再写一遍＝两条口径打架。
+   ⛔ 改口径就改这里一行，⛔ 别整块删（删了结构就没了，下次还得重新加一遍）。 */
+const REFUND = {
+  A: "体验价，付了不退 —— 两份报告是出了就算交付的。",
+  B: "试听体验价，付了不退 —— 正片是发了就算交付的。",
+  C: "",
+  D: "",
+  E: "体验价，付了不退 —— 体验码是发了就算交付的。"
+};
+
 /* 收款块（2026-10-21 定：页面内给微信收款码图）
    🔴 三态：① 有金额 + 有图 ⇒ 图版；② 有金额 + 无图 ⇒ 文字版（加微信要码）；③ 无金额 ⇒ 整块不渲染。
    ⛔ 别用 if(PAY) 判空：PAY 是对象，恒为真，空配置也会渲染出一个空框。
@@ -681,6 +697,10 @@ async function deliver(){
         const w = pc.querySelector(".pay"), t = payText(amt, true);
         if(w && t) w.outerHTML = t; else if(w) w.style.display = "none";
       };
+      await typing(400);
+      /* ⭐ 退款小字紧跟收款卡、在"付完动作"之前：客户手还在码上，这一句正好拦住"我要是反悔呢"。
+         ⛔ 放到最后（加微信引导附近）＝多数人根本滑不到那，等于没说。 */
+      if(REFUND[b]) say(`<span class="rfd">${REFUND[b]}</span>`);
       await typing(400);
       say(`付完把<b>付款截图</b>发我${MY_WECHAT ? `微信 <b>${MY_WECHAT}</b>` : ""}，我看到就${PAID_ACTION[b] || "开始处理"}。`);
     }
