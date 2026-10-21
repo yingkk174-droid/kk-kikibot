@@ -331,6 +331,9 @@ async function confirm_(){
     setTimeout(nextQ, 300);
   });
   askText("要改哪里？直接写", async v=>{
+    /* 🔴 用户习惯直接打字「对」而不是点按钮——这个兜底框原来把所有输入都当"要改"，
+       打「对」会莫名其妙重问一遍（2026-10-20 实测踩到）。确认词必须在两个入口都认。 */
+    if(v.trim().startsWith("对")) return deliver();
     S.i = 0; S.queue = GEN.concat(EXT[S.branch]);
     await typing(300); say("收到，重新问一遍 👌"); setTimeout(nextQ, 300);
   });
