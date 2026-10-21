@@ -76,6 +76,9 @@ header{
 }
 .opt:active{background:var(--accent-bg);border-color:var(--accent)}
 .opt em{font-style:normal;color:var(--accent);font-weight:600;margin-right:8px}
+/* 两列模式：长文本（"联系方式　13800000000" / 链接）会被折成两行、格子高低不齐
+   ⇒ 一律单行 + 省略号。值不需要看全（客户认的是字段名 + 头几位）。 */
+.opts.grid .opt{white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .inrow{display:flex; gap:8px}
 .inrow input{
   flex:1; border:1px solid var(--line); background:var(--card); border-radius:12px; padding:11px 14px;
@@ -101,12 +104,18 @@ header{
 .pay{text-align:center}
 .pay img{
   /* 212 = 手机屏上"一眼看出这是要扫的东西"的下限；再小客户会以为是装饰图而不是收款码 */
-  width:212px;height:212px;max-width:84%;margin:2px auto 10px;display:block;
-  border:1px solid var(--line);border-radius:12px;background:#fff;object-fit:contain
+  width:212px;height:212px;max-width:84%;margin:2px auto 6px;display:block;
+  border:1px solid var(--line);border-radius:12px;background:#fff;object-fit:contain;
+  /* 🔴 显式放开长按：客户唯一的付款主路径就是"长按 → 识别图中二维码"。
+     ⛔ 别给 img 套 <a>（iOS/微信里长按包链接的图，弹的是**链接**菜单，识别入口直接消失）
+        ⇒ 想要"打开大图"只能做图**下方**的独立文字链接，不碰 img。 */
+  -webkit-touch-callout:default; -webkit-user-select:auto; user-select:auto; -webkit-user-drag:auto
 }
+.pay .zoom{display:inline-block;font-size:12.5px;color:var(--sub);margin:-2px auto 8px;text-decoration:underline}
 .pay .amt{font-size:19px;font-weight:700;color:var(--ink);letter-spacing:.3px}
 .pay .amt b{color:var(--accent);font-size:22px}
-.pay .how{font-size:12.5px;color:var(--sub);line-height:1.8;margin-top:8px;text-align:left}
+.pay .how{font-size:12.5px;color:var(--sub);line-height:1.8;margin-top:6px;text-align:left}
+.pay .how .p1{color:var(--ink)}
 .pay .nopic{font-size:13px;color:var(--ink);line-height:1.8}
 .done{display:flex;flex-direction:column;gap:10px}
 .toast{
@@ -204,8 +213,14 @@ const PRICE = {
    🔴 图挂了/还没图 ⇒ 自动落到文字版（加微信要码），⛔ 绝不出现破图。 */
 const PAY = {
   img: "pay_qr.png",  // 收款码图（2026-10-21 上线）：相对路径，与 index.html 同目录。留空 ⇒ 走文字版
-  /* 🔴 两句做法要分开写：图版才能说「长按保存这张码」，文字版里根本没有码，说了等于让客户去找一张不存在的图 */
-  howImg:  "长按保存这张码 → 微信「扫一扫」右上角「相册」→ 付款，把付款截图发我",
+  /* 🔴🔴 图版文案必须**把「长按识别」排在第一条**（2026-10-21 kk 实测：扫码没法保存）。
+     原因：绝大多数客户是**微信里**扫海报进来的 ⇒ 页面就在微信内置浏览器里，
+     长按这张码 → 弹「识别图中二维码」→ 直接跳付款，**一步都不用存相册**。
+     ⛔ 上一版把"长按保存 → 扫一扫 → 右上角相册"写成唯一路径：三步、且每步都能卡住
+        （保存失败 / 相册图被压缩后识别不出 / 找不到相册入口）＝把最绕最容易失败的路指给了客户。
+     ⭐ 判据：**先写最短路径，长路径只当备用。** 备用要单独一行，别混在同一句里读不出来。 */
+  howImg:  "<span class=\"p1\">① 在微信里：长按这张码 → 点「识别图中二维码」→ 直接付</span>（不用先保存）<br>"
+         + "② 不在微信里：点码下面的「看大图」→ 存到相册 → 微信「扫一扫」右上角「相册」",
   howText: "加我后我把收款码发你 → 付款，把付款截图发我"
 };
 /* 🔴 预加载收款码（2026-10-21）：img 是 S4 才动态插进 DOM 的，那时才开始下载 ⇒ 客户刚聊完
@@ -283,6 +298,18 @@ const EXT = {
   D: [{k:"scale", t:"你们现在大概什么体量？", type:"opt", opt:["亿级以上","千万级","百万级","刚起步 / 说不清"]},
       {k:"want",  t:"最想解决的是哪一块？", type:"text", ph:"比如：品牌份额 / 组织 / 利润"}]
 };
+
+/* ⭐ 「哪儿不对」改单项目用的显示名。⛔ key 是给代码用的，直接给客户看会看到 plat/block 这种词。
+   改管理模式时新增 key 必须同步这里，否则菜单上会出现英文键名（row 是从 queue 自动堆出来的）。 */
+const LABEL = {
+  name:"称呼", plat:"平台", cat:"品类", ct:"联系方式",
+  url:"链接", block:"卡在哪", role:"角色", topic:"课题",
+  seat:"同行人数", want:"想解决的事", scale:"体量", sys:"选哪套 Agent", scene:"先试哪一块"
+};
+/* ⭐ 单向依赖：改了前一项，后一项的选项整组就变了 ⇒ 必须跟着一起重问，且旧答案要清掉。
+   ⛔ 只清 scene 不重问：复述卡上会留一个"上一套系统的模块"，按它发的码是错的。
+   目前只有 E（选了"AI 产品设计"→ 换成"AI 跨境电商"，模块清单完全不同）。 */
+const DEP = { sys: ["scene"] };
 const BRANCH_NAME = {A:"链接诊断", B:"课程试听", C:"线下共创营", D:"咨询预约", E:"AI Agent 体验"};
 
 /* ⭐ 课题 → 试听集（2026-10-20 定，规格见 B试听_交付规格/B1_课题试听清单.md）
@@ -338,17 +365,21 @@ function typing(ms){
   return new Promise(r=>setTimeout(()=>{row.remove(); r();}, ms));
 }
 function clearBar(){ bar.innerHTML = ""; }
-function options(list, onPick, hint){
+function options(list, onPick, hint, wide){
   const w = document.createElement("div"); w.className = "opts";
   /* ⭐ 选项多（>5，产品设计七个模块）才切两列 + 限高自滚；四选一那种竖排更好点，
      ⛔ 别无条件写成两列——四选一改成两列反而像标签云。
      限高是第二道保险：小屏（375×667）上七项单列会占掉半屏，把上面的对话全顶没。 */
   if(list.length > 5){
+    w.classList.add("grid");
     w.style.display = "grid"; w.style.gridTemplateColumns = "1fr 1fr"; w.style.gap = "8px";
     w.style.maxHeight = "38vh"; w.style.overflowY = "auto";
   }
   list.forEach(txt=>{
     const b = document.createElement("button"); b.className = "opt";
+    /* wide(txt) ⇒ 占满整行。给"都不对，我重新填一遍"这类长兜底项用：
+       两列里它会折成两行，且右边空一格看着像漏了一项。 */
+    if(wide && wide(txt)) b.style.gridColumn = "span 2";
     const m = txt.match(/^([A-E])\s+(.*)$/);
     b.innerHTML = m ? `<em>${m[1]}</em>${m[2]}` : txt;
     b.onclick = ()=>{ say(txt.replace(/^[A-D]\s+/, ""), true); onPick(txt); };
@@ -412,18 +443,24 @@ function pickBranch(code){
 /* S2 收集 */
 async function nextQ(){
   if(S.i >= S.queue.length){ return confirm_(); }
-  const q = S.queue[S.i];
+  await typing(420);
+  await askOne(S.queue[S.i], ()=>{ S.i++; setTimeout(nextQ, 300); });
+}
+
+/* ⭐ 渲染一题 + 收答案。走完全程（nextQ）和「改单项目」（fixOne）共用这一份，
+   ⛔ 别为了改单项目再抄一段渲染：两份逻辑迟早不同步（opt 写成函数时尤其明显，
+      例：E 的第二问选项依赖 a.sys，抄漏 ev() ⇒ 换系统后模块清单还是旧的）。 */
+async function askOne(q, onAns){
   /* ⭐ 问题允许写成函数（E 的第二问要按所选 Agent 换题型）⇒ 三个字段都要先求值再渲染。
      ⛔ 只求值 t 不管 type / opt：产品设计那一路会照旧渲染成跨境电商的四个选项。 */
   const ev = (v, d) => typeof v === "function" ? v(S.ans) : (v === undefined ? d : v);
   const t = ev(q.t), ty = ev(q.type, "opt");
-  await typing(420);
-  say(t);
+  if(t) say(t);
   S.stage = "s2";
   if(ty === "opt"){
-    options(ev(q.opt, []), v=>{ S.ans[q.k] = v; S.i++; clearBar(); setTimeout(nextQ, 300); }, ev(q.hint, ""));
+    options(ev(q.opt, []), v=>{ S.ans[q.k] = v; clearBar(); onAns(); }, ev(q.hint, ""));
   }else{
-    askText(q.ph || "输入…", v=>{ S.ans[q.k] = v; S.i++; setTimeout(nextQ, 300); });
+    askText(q.ph || "输入…", v=>{ S.ans[q.k] = v; onAns(); });
   }
 }
 
@@ -452,7 +489,9 @@ async function confirm_(){
     ["称呼", a.name], ["平台 / 品类", (a.plat||"") + " / " + (a.cat||"")],
     ["需求", BRANCH_NAME[S.branch]],
     ["情况", detail.join(" · ")],
-    ["联系方式", a.ct]
+    ["联系方式", a.ct],
+    /* ⭐ 客户手打的话要上复述卡：他确认时一眼看到"这句也被记下了"，才放心点是 */
+    ["补充说明", a.note]
   ].filter(r=>r[1]);
   await typing(500);
   say("我记一下，你看对不对：");
@@ -468,7 +507,8 @@ async function confirm_(){
      客户照着做只会在底部找输入框，找不到就以为页面坏了（跟「回复『人工』」同一个病：
      **凡是"让他输入"的指令，先确认那一刻 bar 里到底有没有输入框**）。
      ⇒ 一律改成点按钮的说法，并点名按钮上的字。 */
-  const BAD = "；哪里不对点「不对，我要改」，我重新问一遍。";
+  /* 🔴 BAD 里点名"用不着重填"：客户最怕点个"不对"就被打回原点。 */
+  const BAD = "；哪里不对点「不对，我要改」，我只重问那一处，其余不用重填。";
   say(S.branch === "A" ? "点「对，没问题」我就按这个链接给你出两份报告" + BAD
     : S.branch === "D" ? "点「对，没问题」我就按这个登记，同学会在 1 个工作日内电话联系你" + BAD
     : S.branch === "B" ? "点「对，没问题」我就把这个课题的试听那一集发你" + BAD
@@ -478,18 +518,68 @@ async function confirm_(){
   options(["对，没问题","不对，我要改"], async v=>{
     clearBar();
     if(v.startsWith("对")) return deliver();
-    S.i = 0; S.queue = GEN.concat(EXT[S.branch]);
-    await typing(300);
-    say("好的，重新来一遍 👌");
-    setTimeout(nextQ, 300);
+    await typing(320);
+    say("好，点一下要改的那一项 👌");
+    setTimeout(editMenu, 300);
   });
   askText("要改哪里？直接写", async v=>{
     /* 🔴 用户习惯直接打字「对」而不是点按钮——这个兜底框原来把所有输入都当"要改"，
        打「对」会莫名其妙重问一遍（2026-10-20 实测踩到）。确认词必须在两个入口都认。 */
     if(v.trim().startsWith("对")) return deliver();
-    S.i = 0; S.queue = GEN.concat(EXT[S.branch]);
-    await typing(300); say("收到，重新问一遍 👌"); setTimeout(nextQ, 300);
+    /* ⭐ 打字的人往往是想说"电话写错了"这类话，但**我们不知道要改哪一格** ⇒
+       原样留底（进推送备注）后照样给菜单，别把他的话吞掉再让他从头猜。 */
+    S.ans.note = v;
+    await typing(320);
+    say("收到。你点一下是哪一项要改 👌");
+    setTimeout(editMenu, 300);
   });
+}
+
+/* ⭐⭐ 「哪儿不对」改单项目（2026-10-21 用户实测反馈：原来 S.i=0 全部重填，"这样有点傻"）。
+   设计要点三条：
+   ① **只重问被点的那一项**，其余留在原地 —— 客户改一格不该被打回原点；
+   ② **菜单项带当前值**（"联系方式　13800000000"）⇒ 客户不用回忆自己填过什么，
+      也避免"我明明填对了却要重填"的错觉；
+   ③ **必将有一项可以给选**，极端情况（全都空）才退化为重填。
+   ⛔ 别在这里做"关键词猜他想改哪项"的智能路由：猜错一次比多问一次贵得多，
+      而且猜错的后果是改错了字段还浑然不觉。 */
+async function editMenu(){
+  S.stage = "s3";
+  const items = S.queue.filter(q => S.ans[q.k] !== undefined && S.ans[q.k] !== "");
+  if(!items.length){ S.i = 0; return setTimeout(nextQ, 300); }
+  const clip = s => { const t = String(s); return t.length > 14 ? t.slice(0, 14) + "…" : t; };
+  /* ⭐ 菜单文本里带上值是为了给人看，回调拿到的是整串 ⇒ 用下标反查 index，
+     ⛔ 别拿显示串去 ans 里比对（截断过、还可能撞值，一定查错）。 */
+  const labels = items.map(q => `${LABEL[q.k] || q.k}　${clip(S.ans[q.k])}`);
+  const REDO = "都不对，我重新填一遍";
+  options(labels.concat([REDO]), async v=>{
+    clearBar();
+    const idx = labels.indexOf(v);
+    if(idx < 0){ S.i = 0; await typing(280); say("好，重新来一遍 👌"); return setTimeout(nextQ, 300); }
+    await fixOne(items[idx].k);
+  }, "点一项改一项，其余原样保留", txt => txt === REDO);
+}
+
+/* 改某一项：连带 DEP 里的依赖一起重问（目前只有 E 的 sys→scene）。
+   改完不直接交付 —— 必须再过一次复述确认：客户要亲眼看到改对了才算完，
+   ⛔ 改完就跳付款＝他连自己改没改成都不知道。 */
+async function fixOne(k){
+  const chain = [k].concat(DEP[k] || []);
+  (DEP[k] || []).forEach(d => { delete S.ans[d]; });
+  let i = 0;
+  const step = ()=>{
+    if(i >= chain.length){
+      S.stage = "s3";
+      return setTimeout(async ()=>{ await typing(320); say("改好了，你再看一眼 👌"); setTimeout(confirm_, 260); }, 260);
+    }
+    const q = S.queue.find(x => x.k === chain[i]);
+    i++;
+    if(!q) return step();
+    askOne(q, ()=>{ setTimeout(step, 280); });
+  };
+  await typing(360);
+  say(`改「${LABEL[k] || k}」，就这一项：`);
+  step();
 }
 
 /* ⭐ S4 收尾话术按分支区分（2026-10-20 用户实测反馈后改）
@@ -623,12 +713,15 @@ function payBlock(amt){
   if(!PAY.img) return payText(amt, false);
   /* ⛔ 金额写「应付」而不是「扫这张码付」：图万一没出来，这句话就不通了（金额本身是中性的） */
   return `<div class="pay">`
+       /* ⛔ img 外面不许包 <a>：见 .pay img 的 CSS 注释 —— 包了长按弹的是**链接**菜单，"识别图中二维码"就没了 */
        + `<img src="${PAY.img}" alt="微信收款码">`
+       + `<a class="zoom" href="${PAY.img}" target="_blank" rel="noopener">看不清？点这里看大图</a>`
        + `<div class="amt">应付 <b>¥${amt}</b></div>`
-       + `<div class="how">${PAY.howImg}${MY_WECHAT ? `微信 <b>${MY_WECHAT}</b>` : ""}。`
-       + `付款备注里写上你的名字，方便我对账。`
-       /* ⛔ 别在这里再写一次微信号：同一屏出现两次同一个号＝像机器人复读，也让最后那句被跳过。
-          只留一个出口名（"加我微信"），号在上文已经有了。 */
+       + `<div class="how">${PAY.howImg}`
+       + `<br>付完把<b>付款截图</b>发我，付款备注里写上你的名字，方便我对账。`
+       /* 🔴 卡内⛔ 再写微信号：紧跟下面的气泡已经说了"发我微信 X"，
+          同屏三次同一个号＝机器人复读，客户会跳过最后那句（2026-10-21 截图里抓到的）。
+          卡内只说动作，号一律留给后面的气泡。 */
        + `付不了就加我微信，我另发收款方式。</div>`
        + `</div>`;
 }
@@ -752,6 +845,9 @@ function payload(){
     scale: a.scale, stage: a.stage, block: a.block, role: a.role, want: a.want,
     topic: a.topic, trial_ep: (TRACK[a.topic] || {}).ep || "",
     seat: a.seat, scene: a.scene, now: a.now, amount: amt,
+    /* ⭐ 客户在确认那一步手打的那句话（多半是"电话写错了"这类）。
+       ⛔ 记了就必须发出去：吞掉一句客户主动说的话，比不问还糟（他以为你看到了。⇒ 复述卡也显示）。 */
+    fix_note: a.note || "",
     /* E 选了哪一套系统 + 对应额度：发码的人照这个发，⛔ 别靠 scene 猜（两套业务的词会撞） */
     sys: a.sys, agent_quota: (AGENT[a.sys] || {}).quota || "",
     /* 收的是什么钱：trial=体验价 / deposit=诚意金 / 空=未报价。CRM 里按这个筛，⛔ 别靠分支名猜 */
@@ -832,8 +928,10 @@ function summary(){
     S.branch === "E" ? "系统：" + (a.sys || "-") + "\n想跑：" + (a.scene || "-")
                        + "\n额度：" + ((AGENT[a.sys] || {}).quota || "-") :
                        "体量：" + (a.scale || "-") + "\n想解决：" + (a.want || "-"),
+    /* 🔴 手打的那句原样带上：这是客户主动说的，比结构化字段更接近真实意图 */
+    a.note ? "客户原话：" + a.note : "",
     feeText(S.branch, a)
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 function copy(t){
   if(navigator.clipboard && window.isSecureContext){ navigator.clipboard.writeText(t); return; }
