@@ -138,9 +138,31 @@ const LINKS = {
      留空 = 不渲染「看试听」按钮，走微信发文件（⛔ 空链接比没按钮更伤信任）。
      规格见 B试听_交付规格/B1_课题试听清单.md */
   B: {运营:"", 经营:"", 战略:"", 品牌:""},
-  C: "",   // AI Agent 体验名额
-  D: ""    // 咨询预约（留电话等回联）
+  C: "",   // 线下共创营（诚意金 500）
+  D: "",   // 咨询预约（诚意金 1000，留电话等回联）
+  E: ""    // AI Agent 体验名额
 };
+
+/* ⭐⭐ 价格口径（2026-10-20 定）：**⛔ 不赠免费体验，一律收体验价 / 诚意金**。
+   判据：免费来的线索不珍惜也不筛人，收一小笔钱反而把"真想解决"的人留下。
+   🔴 报价只在 S4 报（先说清给什么，再说多少钱）—— ⛔ 开场就报价会把人吓跑。
+   🔴 价格只认这里，⛔ 不许在话术里另写一个数字（两处不一致＝客户截图来问，最伤信任）。 */
+const PRICE = {
+  A: {list:199,  trial:19.9, what:"单款诊断 + Alexa 诊断优化，两份报告"},
+  /* B 按课题分：体验价买的是「那一集完整正片」，原价是整门课 */
+  B: {"运营":{list:999,  trial:99},
+      "经营":{list:1999, trial:199},
+      "战略":{list:3999, trial:399},
+      "品牌":{list:2999, trial:299}},
+  /* 诚意金：可抵 / 可退两个出口都要写，⛔ 只说"诚意金"不给退路＝听着像押金 */
+  C: {deposit:500,  what:"线下共创营席位", back:"开营前退出可退，到场可抵课程费"},
+  D: {deposit:1000, what:"咨询预约排期",   back:"不合适提前说可退，成交可抵咨询费"},
+  /* ⏳ E 的体验价待定 ⇒ trial 为空就不报价，只走"名额按登记顺序放"的旧口径。
+     ⛔ 不许填一个猜的数：价格说错比不说贵得多。 */
+  E: {list:"", trial:"", what:"AI Agent 体验名额"}
+};
+/* 收款入口（微信收款链接 / 小商店 / 表单都行）。留空 ⇒ 不渲染付款按钮，走微信手动收。 */
+const PAY = "";
 /* ---------- 线索自动上报（实测于 2026-10-20，改之前先看 §4.1 的 CORS 实测表） ---------- */
 /* ⛔ pushplus 直连 = token 写在这个文件里 = 页面源码公开可见（view-source 谁都能看）。
    若 token 不便公开：改 SINK="raw" + WEBHOOK=中转地址，token 只落在服务端环境变量，见 relay/lead.js。 */
@@ -167,7 +189,7 @@ const MENTION_HIGH = false; // 仅 wecom：高意向线索（D 分支 + 亿级/�
 
 /* 渠道：短链 /kb1 /kb2 … 落到这个参数，进 CRM 用于区分投放渠道 */
 const CH = new URLSearchParams(location.search).get("c") || "";
-/* 深链：?b=A|C|D 直达对应分支。渠道页/朋友圈文案里可以直说"点这里预约咨询"，
+/* 深链：?b=A|B|C|D|E 直达对应分支（C=线下共创营，E=AI Agent 体验）。渠道页/朋友圈文案里可以直说"点这里预约咨询"，
    ⛔ 但海报二维码**不加 b**——扫码的人还没被问过，替他选分支就是替他猜需求。 */
 const PRE = (new URLSearchParams(location.search).get("b") || "").toUpperCase();
 
@@ -189,12 +211,16 @@ const EXT = {
   B: [{k:"role",  t:"你的角色是？", type:"opt", opt:["老板","运营负责人","一线运营","其他"]},
       {k:"topic", t:"想先看哪个课题？选一个就行。", type:"opt", opt:["运营","经营","战略","品牌"],
                   hint:"四个课题各是一季，先挑最对胃口的那个看"}],
-  C: [{k:"scene", t:"你最想让它先跑哪一块？", type:"opt", opt:["选品","Listing","投放","复盘"]},
+  /* ⭐ C 由「AI Agent 体验」改为「线下共创营」（2026-10-20 定），Agent 另开 E 分支。
+     共创营问「带几个人 / 现场想解决什么」＝席位数，正是后面排期与报价要用的两个字段。 */
+  C: [{k:"seat",  t:"大概会带几位同事一起来？", type:"opt", opt:["就我一个","2–3 位","4 位以上","还没定"]},
+      {k:"want",  t:"最想在现场解决哪一块？", type:"text", ph:"比如：选品排序 / 团队分工 / 利润"}],
+  E: [{k:"scene", t:"你最想让它先跑哪一块？", type:"opt", opt:["选品","Listing","投放","复盘"]},
       {k:"now",   t:"现在主要靠什么工具或人工做？", type:"text", ph:"比如：表格 + 两个人"}],
   D: [{k:"scale", t:"你们现在大概什么体量？", type:"opt", opt:["亿级以上","千万级","百万级","刚起步 / 说不清"]},
       {k:"want",  t:"最想解决的是哪一块？", type:"text", ph:"比如：品牌份额 / 组织 / 利润"}]
 };
-const BRANCH_NAME = {A:"链接诊断", B:"课程试听", C:"AI Agent 体验", D:"咨询预约"};
+const BRANCH_NAME = {A:"链接诊断", B:"课程试听", C:"线下共创营", D:"咨询预约", E:"AI Agent 体验"};
 
 /* ⭐ 课题 → 试听集（2026-10-20 定，规格见 B试听_交付规格/B1_课题试听清单.md）
    🔴 时长取「29_交付成片-唯一索引」的实测值，⛔ 不凭印象写（全站曾普遍写 5–11 分钟，实测 12–22 分钟）。
@@ -205,10 +231,13 @@ const TRACK = {
   "战略": {ep:"T1《换个地方你还赢吗》", min:"19"},
   "品牌": {ep:"B1《抹掉Logo你还认得出吗》", min:"22"}
 };
+/* 🔴 顺序即优先级，越靠前越先命中。共创营（C）必须排在 Agent（E）前面：
+   「共创」「营」这类词以前归 B，现在归 C；⛔ 顺序反了会被上面的 B 先吃掉。 */
 const RULES = [
   [/链接|Listing|listing|曝光|点击|转化|排名|广告|ACOS|acos|不出单|卡/, "A"],
-  [/课程|课件|试听|听一下|学|培训|上课|共创|营/, "B"],
-  [/Agent|agent|机器人|自动化|选品|投放|复盘|工具|AI|ai/, "C"],
+  [/共创|线下|小班|闭门|现场|带团队/, "C"],
+  [/课程|课件|试听|听一下|学|培训|上课/, "B"],
+  [/Agent|agent|机器人|自动化|工具|AI|ai/, "E"],
   [/咨询|陪跑|顾问|定制|怎么干|约|见面|聊聊|方案/, "D"]
 ];
 
@@ -244,7 +273,7 @@ function options(list, onPick, hint){
   const w = document.createElement("div"); w.className = "opts";
   list.forEach(txt=>{
     const b = document.createElement("button"); b.className = "opt";
-    const m = txt.match(/^([A-D])\s+(.*)$/);
+    const m = txt.match(/^([A-E])\s+(.*)$/);
     b.innerHTML = m ? `<em>${m[1]}</em>${m[2]}` : txt;
     b.onclick = ()=>{ say(txt.replace(/^[A-D]\s+/, ""), true); onPick(txt); };
     w.appendChild(b);
@@ -274,13 +303,15 @@ async function s0(){
      ⛔ 不要留 href="tel:" 的空号，点下去毫无反应（2026-10-20 用户实测踩到） */
   if(MY_TEL){ const ft = document.getElementById("footTel"); if(ft) ft.innerHTML = `<a href="tel:${MY_TEL}">转人工</a>`; }
   await typing(500);
-  say("你好，我是 <b>Kiki-Bot</b>，KK 团队的 AI 顾问 👋<br>我可以帮你对接四件事：链接诊断、课程试听、自研 AI Agent 体验名额、咨询预约。<br>大概 30 秒问清情况，我按你的情况给你对应的安排（诊断报告 / 试听一集 / 体验名额 / 电话回联）。过程中不会向第三方泄露你的信息。<br><br>先问一下：你现在最想解决的是哪一类？");
+  /* ⛔ 开场不报价（S4 才报）：先让人知道能得到什么，再说多少钱。
+     一上来就报 19.9 / 500 会把还在观望的人吓跑，线索直接少一半。 */
+  say("你好，我是 <b>Kiki-Bot</b>，KK 团队的 AI 顾问 👋<br>我可以帮你对接五件事：链接诊断、课程试听、线下共创营、咨询预约、自研 AI Agent 体验名额。<br>大概 30 秒问清情况，我按你的情况给你对应的安排（诊断报告 / 试听一集 / 席位 / 电话回联 / 体验名额），并说清这一步的费用。过程中不会向第三方泄露你的信息。<br><br>先问一下：你现在最想解决的是哪一类？");
   if(PRE && BRANCH_NAME[PRE]){          /* 深链直达分支，省掉一次选择 */
     setTimeout(()=>{ say(`你要的是 <b>${BRANCH_NAME[PRE]}</b> 对吧？直接开始 👇`, true); pickBranch(PRE); }, 320);
     return;
   }
   S.stage = "s1";
-  options(["A 链接诊断","B 课程试听","C AI Agent 体验","D 咨询预约"], pickBranch,
+  options(["A 链接诊断","B 课程试听","C 线下共创营","D 咨询预约","E AI Agent 体验"], pickBranch,
           "也可以直接在下面用一句话说你的情况");
   askText("说一句你的情况", v=>{
     const hit = RULES.find(r=>r[0].test(v));
@@ -323,6 +354,8 @@ async function confirm_(){
   const detail = [];
   if(a.scale) detail.push(a.scale);
   if(a.role)  detail.push(a.role);
+  /* 共创营的席位数：排期和报价都要用它，不上卡片后面就没处问了 */
+  if(a.seat)  detail.push("带 " + a.seat);
   /* ⭐ B 选的课题必须上复述卡：这是这一条线索的路由依据，
      卡片上不显示，客户只能凭印象点"对"，我们这边也就少了排序信息。 */
   if(a.topic) detail.push("课题「" + a.topic + "」");
@@ -349,6 +382,7 @@ async function confirm_(){
   say(S.branch === "A" ? "回复「对」我就按这个链接给你出两份报告；哪里不对直接说，我改。"
     : S.branch === "D" ? "回复「对」我就按这个登记，同学会在 1 个工作日内电话联系你；哪里不对直接说，我改。"
     : S.branch === "B" ? "回复「对」我就把这个课题的试听那一集发你；哪里不对直接说，我改。"
+    : S.branch === "C" ? "回复「对」我就把席位给你留上，并说清诚意金怎么交；哪里不对直接说，我改。"
     : "回复「对」我就把申请入口发你；哪里不对直接说，我改。");
   options(["对，没问题","不对，我要改"], async v=>{
     clearBar();
@@ -385,10 +419,42 @@ const AFTER = {
     return `试听给你 <b>${k.ep}</b>，约 ${k.min} 分钟，1 个工作日内发你（微信发你文件或链接）。`
          + `<br>先发这一集，你先看讲法对不对胃口；合适再聊后面的。`;
   },
-  C: "体验名额按登记顺序放，开通后先给你一份「Agent 能接哪些活」的清单，再决定要不要上。",
-  D: "电话之前你可以先想清楚三件事：现在的体量、最想改的<b>一个</b>指标、能投入多少时间。"
+  /* ⭐ C = 线下共创营（2026-10-20 定，原 C 是 Agent 体验，已拆到 E） */
+  C: "席位我先给你留着，开营前我会把时间地点和要带的资料发你。<br>现场一次只解决一个问题，所以你先把最想解决的那一块想清楚，带着它来。",
+  D: "电话之前你可以先想清楚三件事：现在的体量、最想改的<b>一个</b>指标、能投入多少时间。",
+  E: "体验名额按登记顺序放，开通后先给你一份「Agent 能接哪些活」的清单，再决定要不要上。"
 };
-const AFTER_TAIL = "<br>还有别的问题可以直接问我；要找人聊，回复「人工」我转过去。";
+const AFTER_TAIL = "还有别的问题可以直接问我；要找人聊，回复「人工」我转过去。";
+
+/* ⭐⭐ 价格气泡（2026-10-20 定）：**⛔ 没有免费体验，只有体验价 / 诚意金**。
+   🔴 只在 S4、在交付物说完之后报 —— 顺序反了（先要钱后说给什么）＝纯劝退。
+   🔴 数字一律从 PRICE 取，⛔ 绝不在这里手写第二个数字。
+   🔴 诚意金必须同时给出「可退」和「可抵」两个出口，⛔ 只说"诚意金"＝听着像押金。 */
+function priceLine(b, a){
+  const p = PRICE[b];
+  if(!p) return "";
+  if(b === "A")
+    return `💰 这一步的费用：原价 <s>¥${p.list}</s> <b>体验价 ¥${p.trial}</b>`
+         + `<br>出的是：${p.what}。付了我就按这个链接开始出。`;
+  if(b === "B"){
+    const k = p[a.topic];
+    if(!k) return "";
+    return `💰 这一步的费用：${a.topic}这门课原价 <s>¥${k.list}</s> <b>试听体验价 ¥${k.trial}</b>`
+         + `<br>给的是：上面那一集完整正片。先看讲法对不对胃口，合适再聊整门课。`;
+  }
+  if(b === "C" || b === "D")
+    return `💰 这一步的费用：${p.what}诚意金 <b>¥${p.deposit}</b>`
+         + `<br>${p.back}。`;
+  return "";   /* E 的体验价待定 ⇒ 不报价，⛔ 不许填猜的数 */
+}
+/* 应付金额（给付款按钮和推送标题用）。⛔ 与 priceLine 同源，别两处各算一遍 */
+function amount(b, a){
+  const p = PRICE[b]; if(!p) return "";
+  if(b === "A") return p.trial;
+  if(b === "B"){ const k = p[a.topic]; return k ? k.trial : ""; }
+  if(b === "C" || b === "D") return p.deposit;
+  return "";
+}
 
 /* S4 交付 */
 async function deliver(){
@@ -423,9 +489,13 @@ async function deliver(){
   /* ⭐ A 分支没有申请表（交付物是两份报告）：⛔ 别再说"申请入口"，会让人去找一个不存在的入口 */
   /* ⭐ B 也不用"申请"这个词：试听是登记了就发，不存在申请环节。
      ⛔ 说"申请入口"会让客户去找一个不会来的入口（A 分支已踩过同一个坑）。 */
-  say((b === "A" || b === "B")
-      ? `✅ 已登记：<b>${BRANCH_NAME[b]}</b>` + (b === "B" && a.topic ? ` · ${a.topic}` : "")
-      : `✅ 申请入口：<b>${BRANCH_NAME[b]}</b>`);
+  /* ⭐ 措辞跟着"这一步客户给的是什么"走：
+     A/B = 付费体验（已登记）／C/D = 诚意金锁位（已锁定）／E = 名额（申请入口）。
+     ⛔ 统一说"申请入口"会让 A/C/D 客户去找一个不会来的入口（同一个坑已踩两次）。 */
+  say(b === "E"
+      ? `✅ 申请入口：<b>${BRANCH_NAME[b]}</b>`
+      : `✅ ${(b === "C" || b === "D") ? "已锁定" : "已登记"}：<b>${BRANCH_NAME[b]}</b>`
+        + (b === "B" && a.topic ? ` · ${a.topic}` : ""));
   if(note) say(note);
 
   const box = document.createElement("div"); box.className = "row";
@@ -443,7 +513,16 @@ async function deliver(){
      两句并列就是自相矛盾，客户只会记住被拖的那句。 */
   /* AFTER.B 是函数（按课题报集名），其余是字符串 ⇒ 先判类型再拼，⛔ 直接 + 会把函数体拼进话术 */
   const af = AFTER[b] || AFTER.B;
-  say((typeof af === "function" ? af(a.topic) : af) + AFTER_TAIL);
+  say(typeof af === "function" ? af(a.topic) : af);
+
+  /* ⭐ 报价紧跟在"给什么"之后，⛔ 不在开场、不在确认前报（先要钱后说给什么＝纯劝退） */
+  const pl = priceLine(b, a), amt = amount(b, a);
+  if(pl){
+    await typing(400);
+    say(pl);
+    if(PAY && amt !== "") card(`<a class="btn" href="${PAY}" target="_blank" rel="noopener">付 ¥${amt} · ${BRANCH_NAME[b]}</a>`);
+  }
+  say(AFTER_TAIL);
 
   const f = document.createElement("div"); f.className = "hint";
   /* ⭐ 没有企微活码时，这是唯一能沉淀好友关系的一步：聊完顺手把人加到你的微信。
@@ -460,18 +539,23 @@ async function deliver(){
 function payload(){
   const a = S.ans, t = summary();
   const hi = (S.branch === "D" && /(亿级|千万级)/.test(a.scale || ""));
+  const amt = amount(S.branch, a);
   /* 结构化字段：所有 SINK 都带，给多维表 / CRM / 自建端点 */
   const base = {
     channel: CH, branch: S.branch, branch_name: BRANCH_NAME[S.branch], intent: hi ? "high" : "normal",
     name: a.name, plat: a.plat, cat: a.cat, contact: a.ct,
     scale: a.scale, stage: a.stage, block: a.block, role: a.role, want: a.want,
     topic: a.topic, trial_ep: (TRACK[a.topic] || {}).ep || "",
+    seat: a.seat, scene: a.scene, now: a.now, amount: amt,
+    /* 收的是什么钱：trial=体验价 / deposit=诚意金 / 空=未报价。CRM 里按这个筛，⛔ 别靠分支名猜 */
+    fee_type: (S.branch === "A" || S.branch === "B") ? "trial" : (S.branch === "C" || S.branch === "D") ? "deposit" : "",
     ts: new Date().toISOString()
   };
   if(SINK === "pushplus"){
     return Object.assign(base, {token: SINK_TOKEN,
-      /* 课题进标题：微信推送列表里一眼看出该发哪一集，不用点开看正文 */
-      title: "新线索 · " + BRANCH_NAME[S.branch] + (a.topic ? " · " + a.topic : "") + (hi ? " · 高意向" : ""),
+      /* 课题 + 金额进标题：微信推送列表里一眼看出该发什么、收多少，不用点开正文 */
+      title: "新线索 · " + BRANCH_NAME[S.branch] + (a.topic ? " · " + a.topic : "")
+             + (amt ? " · ¥" + amt : "") + (hi ? " · 高意向" : ""),
       content: t, template: "txt"});
   }
   if(SINK === "feishu"){
@@ -508,6 +592,14 @@ function send(){
   fetch(url, {method:"POST", keepalive:true,
                   headers:{"Content-Type":"application/json"}, body}).catch(()=>{});
 }
+/* 推送给微信的那一句费用（跟客户看到的价格同源，⛔ 两处各写一遍必错） */
+function feeText(b, a){
+  const amt = amount(b, a);
+  if(amt === "") return "应付：未报价（体验价待定）";
+  if(b === "A") return "应付：¥" + amt + "（体验价，原价 ¥" + PRICE.A.list + "）";
+  if(b === "B"){ const k = PRICE.B[a.topic] || {}; return "应付：¥" + amt + "（试听体验价，原价 ¥" + (k.list || "-") + "）"; }
+  return "应付：¥" + amt + "（诚意金，" + PRICE[b].back + "）";
+}
 function summary(){
   const a = S.ans;
   return [
@@ -519,8 +611,10 @@ function summary(){
     "联系方式：" + (a.ct || "-"),
     S.branch === "A" ? "链接：" + (a.url || "-") + "\n卡点：" + (a.block || "-") :
     S.branch === "B" ? "角色：" + (a.role || "-") + "\n课题：" + (a.topic || "-") + "（试听 " + ((TRACK[a.topic] || {}).ep || "待定") + "）" :
-    S.branch === "C" ? "场景：" + (a.scene || "-") + "\n现用工具：" + (a.now || "-") :
-                       "体量：" + (a.scale || "-") + "\n想解决：" + (a.want || "-")
+    S.branch === "C" ? "席位：" + (a.seat || "-") + "\n想解决：" + (a.want || "-") :
+    S.branch === "E" ? "场景：" + (a.scene || "-") + "\n现用工具：" + (a.now || "-") :
+                       "体量：" + (a.scale || "-") + "\n想解决：" + (a.want || "-"),
+    feeText(S.branch, a)
   ].join("\n");
 }
 function copy(t){
