@@ -252,6 +252,15 @@ const PRICE = {
      额度从 AGENT[所选系统].quota 取（唯一真源在 AGENT）。 */
   E: {list:"", trial:19.9, unit:"体验码", valid:"1 个月内有效"}
 };
+/* ⭐⭐⭐ 交付时效唯一真源（2026-10-22 用户拍板：**所有项目一律 3 个工作日内联系或交付**）
+   🔴 页面上任何"×天内发你 / 联系你"都必须从这里拼，⛔ 不许在话术里另写数字：
+      ① 两处并存（这边 1 天、那边 3 天）＝客户只会记住被拖的那句，客服也答不上口径；
+      ② 改口径只改这一行（⛔ 别整站搜替换：搜替换会漏掉拼在模板字符串里的那一处，
+         漏一处就是"两个时效同时在页面上"）。
+   🔴 只给一个数，⛔ 不加"最快当天""通常隔天"这类修饰 —— 修饰会被当成承诺，
+      做不到就是违约（而且客户截图来问时，你没法解释"通常"是几次）。
+   ⛔ 五个分支都要有明确的时效落点：不写时效＝客户不知道自己在等什么，只能来催。 */
+const SLA = "3 个工作日内";
 /* ---------- 收款入口（2026-10-21 定：页面内给微信收款码图，付完截图回传） ----------
    🔴 只放「收款码」（微信 → 我 → 服务 → 收款与经营 里的那个二维码，别人扫了是付钱给你）。
       ⛔ 绝不放「付款码」（收付款页那个条码 + 数字）——那是给别人扫走你钱的，公开即资损。
@@ -402,7 +411,8 @@ const RULES = [
 ];
 
 /* ---------- 状态 ---------- */
-const S = {branch:null, queue:[], i:0, ans:{}, stage:"s0"};
+/* known = 本轮**从档案里带过来**的基础信息项数（0 = 全新客户，四项都要问） */
+const S = {branch:null, queue:[], i:0, ans:{}, stage:"s0", known:0};
 const chat = document.getElementById("chat");
 const bar  = document.getElementById("bar");
 /* ⭐ 开场白的**唯一真源**是 HTML 里那个静态 #hello（防白屏，见 body 里的注释）。
@@ -412,6 +422,18 @@ const bar  = document.getElementById("bar");
 const HELLO_HTML = (document.getElementById("hello") || {}).innerHTML || "";
 const KEY  = "kikibot_ans";
 const PROG = "kikibot_prog";
+/* ⭐⭐ 客户基础档案（2026-10-22 用户拍板：**换方向不再把基础信息问第二遍**）
+   场景：客户答完一轮（称呼 / 平台 / 品类 / 联系方式都留过）⇒ 跳出、或点「不继续了，重新选一个方向」
+        ⇒ 再选另一个方向时，这四项 ⛔ 不问，直接问"下一步要对接哪一块"。
+   🔴 为什么**单独一个 key**、不塞进 PROG：
+      ① 生命周期不同 —— PROG 是"这次聊到哪了"（72 小时，三天前的半成品别再打扰）；
+         档案是"这人是谁"（30 天，一个月内不会变）。
+      ② 🔴🔴 **delProg() 绝不能连带删档案**：清进度只是"这一单没聊完"，
+         不是"这个人不认识了"。删了档案＝下次从头再问一遍，正是要修的那个毛病。
+   🔴 只存 GEN 四项，⛔ 不存分支专属答案（课题 / 卡在哪 / 席位数）：
+      那些属于**上一单**，带到下一单会让复述卡冒出"课题：运营"而他这次要的是诊断。 */
+const PROF = "kikibot_profile";
+const PROF_TTL = 30*24*3600*1000;
 /* 🔴🔴 这里曾经有一个 `_leftPage` 标记（visibilitychange 判"页面有没有被盖住"），
    用来在点了「点这里付款」2.2s 后判断 wxp:// 有没有跳成功、决定要不要展开兜底。
    2026-10-21 kk 二次实测：wxp:// 点了**根本不跳转** ⇒ 那条主路径整个作废、按钮已删，
@@ -432,11 +454,20 @@ const PROG = "kikibot_prog";
    🔴 依旧只存**业务数据**，⛔ 不存 innerHTML：DOM 里的 onclick 是 JS 属性，序列化后再
       塞回去会变成一堆点了没反应的死按钮（事件全丢）⇒ 恢复必须重新走渲染，不能回放 HTML。 */
 function saveProg(){
-  const d = {b:S.branch, a:S.ans, i:S.i, st:S.stage, p:S.paid||0, t:Date.now()};
+  /* ⭐ qk = 本次队列的**题目 key 顺序**（2026-10-22 加）。
+     🔴 为什么必须存：跳过已留过的基础项后，队列长度不再固定（可能是 2 项而不是 6 项）；
+        恢复时若一律按 `GEN.concat(EXT)` 重建 ⇒ S.i 对不上题，会把"第 3 题"问成已答过的称呼。
+        存 key 列表 = 队列的**形状**原样带回来，题号语义不会漂。
+     ⛔ 旧档没有 qk ⇒ 走 `GEN.concat(EXT)` 的兜底（旧档本来就是没跳过任何题的那一版）。 */
+  const d = {b:S.branch, a:S.ans, i:S.i, st:S.stage, p:S.paid||0,
+             qk:S.queue.map(q=>q.k).join(","), t:Date.now()};
   const s = JSON.stringify(d);
   try{ localStorage.setItem(PROG, s); }catch(e){}
   try{ document.cookie = PROG + "=" + encodeURIComponent(s)
        + ";max-age=" + 3*24*3600 + ";path=/;SameSite=Lax"; }catch(e){}
+  /* ⭐ 顺手更新基础档案：每一次落盘都意味着"他又往前答了几题"，
+     ⇒ 就在这次写入里一并刷新，⛔ 不在别处再挂一份（挂两处，迟早漏掉一处的调用点）。 */
+  saveProfile();
 }
 function loadProg(){
   let r = null;
@@ -457,6 +488,35 @@ function loadProg(){
 function delProg(){
   try{ localStorage.removeItem(PROG); }catch(e){}
   try{ document.cookie = PROG + "=;max-age=0;path=/"; }catch(e){}
+  /* 🔴🔴 这里⛔ 不许顺手删 PROF（基础档案）：
+     清 PROG 是"这一单没聊完"，删 PROF 是"这个人我不认识了" —— 后者会让他下次被重问一遍
+     称呼/平台/品类/联系方式，正是本次要修的毛病（2026-10-22）。 */
+}
+/* ⭐⭐ 基础档案读写（2026-10-22）：与 PROG 同样双写（localStorage + cookie），
+   ⛔ 只写 localStorage：隐私模式下 setItem 抛错被吞 ⇒ 档案悄悄丢，下次照旧重问。
+   🔴 只收 GEN 四项里**有值**的：空值不写（写了等于"他答过这道题但答案是空"，
+      跳过判据 `if(prof[q.k])` 本来也认不出来，白占 cookie 字节）。 */
+function saveProfile(){
+  const p = {};
+  GEN.forEach(q=>{ if(S.ans[q.k]) p[q.k] = S.ans[q.k]; });
+  if(!Object.keys(p).length) return;
+  p.t = Date.now();
+  const s = JSON.stringify(p);
+  try{ localStorage.setItem(PROF, s); }catch(e){}
+  try{ document.cookie = PROF + "=" + encodeURIComponent(s)
+       + ";max-age=" + 30*24*3600 + ";path=/;SameSite=Lax"; }catch(e){}
+}
+function loadProfile(){
+  let r = null;
+  try{ r = JSON.parse(localStorage.getItem(PROF) || "null"); }catch(e){}
+  if(!r){
+    try{
+      const m = document.cookie.match(new RegExp("(?:^|;\\s*)" + PROF + "=([^;]*)"));
+      if(m) r = JSON.parse(decodeURIComponent(m[1]));
+    }catch(e){}
+  }
+  if(!r || Date.now() - (r.t || 0) > PROF_TTL) return null;
+  return r;
 }
 
 /* ---------- 渲染 ---------- */
@@ -532,7 +592,14 @@ function resumeCard(r){
      st 判定：s2=答题中（按 i 接着问）、s3=确认页、s4=付款；旧档（无 st）必是 v1 的 S4 档。 */
   const a = r.a || {};
   const who = BRANCH_NAME[r.b] || "";
-  const qLen = GEN.concat(EXT[r.b] || []).length;
+  /* ⭐ 队列形状按存档带的 key 列表重建（2026-10-22）：
+     🔴 跳过基础项之后，这一单的队列可能只有两题。⛔ 还拿 `GEN.concat(EXT)` 的 6 去配一个
+        两题队列的 i ⇒ 卡片上写"答到第 2/6 题"（假进度），点"接着答"会问回他早就答过的称呼。
+     ⛔ 旧档没有 qk ⇒ 退回全集：那时的档本来也没跳过任何题，两者一致。 */
+  const full  = GEN.concat(EXT[r.b] || []);
+  const qk    = r.qk ? String(r.qk).split(",").filter(Boolean) : [];
+  const queue = qk.length ? qk.map(k=>full.find(x=>x.k===k)).filter(Boolean) : full.slice();
+  const qLen  = queue.length;
   /* 答题中：i < 总题数（⛔ 拿不准就当 s4 处理 —— 把没答完的人直接甩去付款，报价必错） */
   const mid = r.st === "s2" && typeof r.i === "number" && r.i < qLen;
   /* ⭐ 答完最后一道题、还没在复述卡上点确认就跳出 ⇒ 档是 {st:"s2", i:qLen}。
@@ -570,7 +637,10 @@ function resumeCard(r){
     S.branch = r.b;
     S.ans = a;
     S.paid = r.p || 0;
-    S.queue = GEN.concat(EXT[r.b] || []);
+    /* ⭐ 用上面重建出来的队列（形状与存档一致），⛔ 别再按全集拼一次：
+       拼回去就会把已经答过的基础项重新排进队列，S.i 又是错位那一套。 */
+    S.queue = queue.slice();
+    S.known = GEN.filter(q=>a[q.k]).length;   /* 这一单复用了几项基础信息（续聊卡文案用） */
     chat.innerHTML = ""; clearBar();
     if(mid){
       S.stage = "s2"; S.i = r.i;
@@ -650,16 +720,41 @@ async function s0main(useDeep){
   });
 }
 
+/* ⭐ 这一单的**完整题库** = 通用四项 + 本分支专属两项（2026-10-22）
+   🔴 与 S.queue 的区别：从这次起两者**不再恒等** ——
+      S.queue 是"这次还要问的"（跳过已留过的基础项后可能只剩两项）；
+      完整题库是"这一单登记了哪些内容"。
+      ⛔ 「哪儿不对」菜单必须用完整题库：客户改的是**登记内容** ——
+         这一单只问了两题、菜单里却连"联系方式"都没有 ⇒ 电话写错了他改不了，只能推倒重来。 */
+function allQ(){ return GEN.concat(EXT[S.branch] || []); }
+
 /* S1 需求识别：命中即进分支；"不对"回退一次 */
 function pickBranch(code){
   const c = (code || "").trim().charAt(0).toUpperCase();
   if(!BRANCH_NAME[c]) return;
+  /* 🔴 换方向先清空**上一单的专属答案**（课题 / 卡在哪 / 席位数 / 选了哪套 Agent…）：
+     那是上一单的需求，留着会让复述卡上出现别家需求，推送正文也会串味。 */
+  S.ans = {};
+  /* ⭐⭐ 基础信息不重问（2026-10-22 用户拍板：跳出再点进来换方向，基础信息不问第二遍）
+     🔴 按**项**跳过，⛔ 不是"四项齐全才跳"：客户上一轮只答到"怎么称呼"就跳出了，
+        这次也不该再问他叫什么 —— 少问一句是一句。
+        ⛔ 但没留过的项必须照问：尤其联系方式，缺了这一单根本交不了，
+           ⛔ 别为了"显得智能"把必填项也一并跳过去。 */
+  const prof = loadProfile();
+  if(prof) GEN.forEach(q=>{ if(prof[q.k]) S.ans[q.k] = prof[q.k]; });
+  S.known = GEN.filter(q=>S.ans[q.k]).length;
   S.branch = c; S.stage = "s2";
-  S.queue = GEN.concat(EXT[c]);
+  S.queue = GEN.filter(q=>!S.ans[q.k]).concat(EXT[c] || []);
   S.i = 0;
   saveProg();            /* ⭐ 选定分支就落盘：从这一刻起任何跳出都接得住 */
   clearBar();
-  setTimeout(nextQ, 380);
+  setTimeout(()=>{
+    /* ⭐ 跳过必须**明说一句**：⛔ 默默不问，客户会以为页面漏了、或怀疑上次填的丢了。
+       ⛔ 也别在这里把留过的信息再复述一遍 —— 复述卡在确认那一步会给，同屏两遍＝啰嗦。 */
+    if(S.known)
+      say(`${S.ans.name ? esc(S.ans.name) + "，" : ""}你上次留的信息我记着 —— 这次只问<b>要对接哪一块</b>，那几项不用重填 👇`);
+    nextQ();
+  }, 380);
 }
 
 /* S2 收集 */
@@ -741,7 +836,8 @@ async function confirm_(){
   /* 🔴 BAD 里点名"用不着重填"：客户最怕点个"不对"就被打回原点。 */
   const BAD = "；哪里不对点「不对，我要改」，我只重问那一处，其余不用重填。";
   say(S.branch === "A" ? "点「对，没问题」我就按这个链接给你出两份报告" + BAD
-    : S.branch === "D" ? "点「对，没问题」我就按这个登记，同学会在 1 个工作日内电话联系你" + BAD
+    /* ⭐ 时效一律取 SLA（⛔ 不在这里手写"1 个工作日"：手写就会和 AFTER 里的那句各说各的） */
+    : S.branch === "D" ? "点「对，没问题」我就按这个登记，同学会在 " + SLA + "电话联系你" + BAD
     : S.branch === "B" ? "点「对，没问题」我就把这个课题的试听那一集发你" + BAD
     : S.branch === "C" ? "点「对，没问题」我就把席位给你留上，并说清诚意金怎么交" + BAD
     : S.branch === "E" ? `点「对，没问题」我就把 <b>${S.ans.sys || "Agent"}</b> 的体验码发你，并说清有效期和额度` + BAD
@@ -776,7 +872,9 @@ async function confirm_(){
       而且猜错的后果是改错了字段还浑然不觉。 */
 async function editMenu(){
   S.stage = "s3";
-  const items = S.queue.filter(q => S.ans[q.k] !== undefined && S.ans[q.k] !== "");
+  /* 🔴 菜单用**完整题库**而不是 S.queue（2026-10-22）：
+     跳过基础项后 S.queue 可能只剩两项 ⇒ 菜单里没有"联系方式"，他改不了电话。 */
+  const items = allQ().filter(q => S.ans[q.k] !== undefined && S.ans[q.k] !== "");
   if(!items.length){ S.i = 0; return setTimeout(nextQ, 300); }
   const clip = s => { const t = String(s); return t.length > 14 ? t.slice(0, 14) + "…" : t; };
   /* ⭐ 菜单文本里带上值是为了给人看，回调拿到的是整串 ⇒ 用下标反查 index，
@@ -786,7 +884,10 @@ async function editMenu(){
   options(labels.concat([REDO]), async v=>{
     clearBar();
     const idx = labels.indexOf(v);
-    if(idx < 0){ S.i = 0; await typing(280); say("好，重新来一遍 👌"); return setTimeout(nextQ, 300); }
+    /* ⭐ 点「都不对，我重新填一遍」＝**整套重来**（含被跳过的基础项）：
+       ⛔ 只把 S.i 归零、队列还是这次那两项 ⇒ 他明明说了"重新填一遍"，
+          结果只重填了两题，会觉得按钮没生效（2026-10-22 跳过机制引入后才有的坑）。 */
+    if(idx < 0){ S.queue = allQ().slice(); S.known = 0; S.i = 0; await typing(280); say("好，重新来一遍 👌"); return setTimeout(nextQ, 300); }
     await fixOne(items[idx].k);
   }, "点一项改一项，其余原样保留", txt => txt === REDO);
 }
@@ -803,7 +904,9 @@ async function fixOne(k){
       S.stage = "s3";
       return setTimeout(async ()=>{ await typing(320); say("改好了，你再看一眼 👌"); setTimeout(confirm_, 260); }, 260);
     }
-    const q = S.queue.find(x => x.k === chain[i]);
+    /* 🔴 同样要用完整题库找题：改的那一项可能是被跳过的基础项（S.queue 里根本没有它），
+       在 S.queue 里 find ⇒ 找不到 ⇒ step() 静默跳过 ⇒ 菜单点了没反应。 */
+    const q = allQ().find(x => x.k === chain[i]);
     i++;
     if(!q) return step();
     askOne(q, ()=>{ setTimeout(step, 280); });
@@ -821,7 +924,7 @@ async function fixOne(k){
    ⇒ 原则：每个分支只承诺它能交付的东西，别把 A 的流程说给所有人听。 */
 const AFTER = {
   /* ⭐ A 分支交付物 = 两份报告（2026-10-20 定），规格见 A诊断_交付规格/ */
-  A: "链接收到了，我这边给你出<b>两份报告</b>：<br>① <b>单款诊断</b>——跟 1–2 条竞品比，看这款卡在哪一环；<br>② <b>Alexa 诊断优化</b>——AI 导购来了，这款接不接得住。<br>1 个工作日内发你。<br>要是链接不好复制，把<b>款式名</b>发我也行。",
+  A: "链接收到了，我这边给你出<b>两份报告</b>：<br>① <b>单款诊断</b>——跟 1–2 条竞品比，看这款卡在哪一环；<br>② <b>Alexa 诊断优化</b>——AI 导购来了，这款接不接得住。<br>" + SLA + "发你。<br>要是链接不好复制，把<b>款式名</b>发我也行。",
   /* ⭐ B 按所选课题报出「哪一集 + 多少分钟」（2026-10-20 定）：
      ⛔ 原来只说"试听入口在上面"等于没交付——客户不知道自己在等什么，
         也不知道这一集跟他刚选的课题是什么关系。 */
@@ -829,11 +932,13 @@ const AFTER = {
   B: function(a){
     const k = TRACK[a.topic];
     if(!k) return "试听入口在上面，选你感兴趣的课题就行。听完有具体问题可以直接问我。";
-    return `试听给你 <b>${k.ep}</b>，约 ${k.min} 分钟，1 个工作日内发你（微信发你文件或链接）。`
+    return `试听给你 <b>${k.ep}</b>，约 ${k.min} 分钟，${SLA}发你（微信发你文件或链接）。`
          + `<br>先发这一集，你先看讲法对不对胃口；合适再聊后面的。`;
   },
   /* ⭐ C = 线下共创营（2026-10-20 定，原 C 是 Agent 体验，已拆到 E） */
-  C: "席位我先给你留着，开营前我会把时间地点和要带的资料发你。<br>现场一次只解决一个问题，所以你先把最想解决的那一块想清楚，带着它来。",
+  /* ⭐ C 也要有明确时效（2026-10-22）：原写"开营前我会发你"——那是一个**没有落点的承诺**，
+     客户不知道要等多久，也不好意思催 ⇒ 一律改成 SLA（"开营前"留着当补充，不当时效）。 */
+  C: "席位我先给你留着，" + SLA + "把开营的时间、地点和要带的资料发你。<br>现场一次只解决一个问题，所以你先把最想解决的那一块想清楚，带着它来。",
   D: "电话之前你可以先想清楚三件事：现在的体量、最想改的<b>一个</b>指标、能投入多少时间。",
   /* ⛔ 原写「体验名额按登记顺序放」——那是免费的口气，与上面收 19.9 自相矛盾。
      ⭐ 改说「体验码」：一个码 = 一份额度，有效期和额度说到明处，用完要再加也说得通。
@@ -843,7 +948,9 @@ const AFTER = {
        只说"按清单先跑最想跑的那一块"＝还要他自己再找一遍，等于没接住那句话。
        ⚠️ scene 理论上有值（第二问是选项），但函数里仍要兜空，⛔ 别让文案出现「先跑 」这种断句。 */
     const m = a.scene ? `你刚选的 <b>${a.scene}</b> 可以先跑；` : "";
-    return `付了我就给你发一个体验码，你拿码去 <b>${a.sys}</b> 开。`
+    /* ⭐ 体验码也必须带时效（2026-10-22）：只说"付了就发"，客户会当成"付完立刻"，
+        半夜付的等一小时就来问 ⇒ 明写 SLA，反而更少人催。 */
+    return `付了我就在 ${SLA}把体验码发你，你拿码去 <b>${a.sys}</b> 开。`
          + `<br>开通后附一份「它能接哪些活」的清单，${m}额度用完了要续，跟我说一声就行。`;
   }
 };
@@ -1027,7 +1134,9 @@ function paidCard(amt){
           但也⛔ 不能一声不吭 —— 客户读完这句会问"发到哪个微信?"
           ⇒ 只**指路**、不复述号码："页面最下面那行有号"。点完之后才把号写进卡里
             （那时他确实要用到这个号去加好友）。 */
-    + `<div class="tip">付完点一下（在微信里跟我说一声也一样），我这边马上能收到。核对完收款就${act}`
+    /* ⭐ 付完也要给时效（2026-10-22）：只说"核对完就发"，客户会把"核对完"听成"几分钟"，
+       然后每隔一小时来问一次 ⇒ 明写 SLA，既统一口径也省掉一半追问。 */
+    + `<div class="tip">付完点一下（在微信里跟我说一声也一样），我这边马上能收到。核对完收款，我会在 ${SLA}${act}`
     + `${MY_WECHAT ? ` —— 还没加我微信的话，上面收款卡里那个「复制微信号」按一下就行` : ""}。</div>`
     + `</div>`);
   const btn = c.querySelector("#paid"), tip = c.querySelector(".tip");
@@ -1038,7 +1147,7 @@ function paidCard(amt){
     btn.disabled = true;
     btn.classList.add("done");
     btn.textContent = "✅ 已收到，等他核对";
-    tip.innerHTML = `收到了 —— 我去核一下收款，核对完就${act}。`
+    tip.innerHTML = `收到了 —— 我去核一下收款，${SLA}就${act}。`
       + (MY_WECHAT ? `还没加我微信的话，加一下 <b>${MY_WECHAT}</b>，码直接发过去。` : "");
   }
   btn.onclick = ()=>{
@@ -1049,7 +1158,7 @@ function paidCard(amt){
     btn.classList.add("done");     /* 换成"回执"外观，见 .cta .btn.done 的注释 */
     btn.textContent = "✅ 已收到，等他核对";
     /* 🔴 收尾只给微信这一个真实出口：这里没有输入框，⛔ 不许写「回复」 */
-    tip.innerHTML = `收到了 —— 我去核一下收款，核对完就${act}。`
+    tip.innerHTML = `收到了 —— 我去核一下收款，${SLA}就${act}。`
       + (MY_WECHAT ? `还没加我微信的话，加一下 <b>${MY_WECHAT}</b>，码直接发过去。` : "");
     send({pay_status:"客户称已付", pay_event:"paid_claim"});
     toast("已通知，等他核对收款");
@@ -1100,7 +1209,7 @@ async function deliver(replay){
       note = "这个阶段先把打法和口径理顺，比定制陪跑划算 —— 加你之后我按你感兴趣的课题（运营 / 经营 / 战略 / 品牌）发一集试听；咨询意向我也登记下来了。";
     }
     /* ⭐ 用户 2026-10-20 拍板：D = 留电话等回联（不做选时段，排期走人工） */
-    note += "我们会在 1 个工作日内电话联系你（工作日 10:00–19:00）。";
+    note += "我们会在 " + SLA + "电话联系你（工作日 10:00–19:00）。";
   }
 
   /* ⭐ A 分支没有申请表（交付物是两份报告）：⛔ 别再说"申请入口"，会让人去找一个不存在的入口 */
@@ -1131,8 +1240,8 @@ async function deliver(replay){
   d.querySelector("#cp").onclick = ()=>{ copy(summary()); toast("已复制，可直接发给顾问"); };
 
   await typing(400);
-  /* ⛔ D 分支不能再说"1–2 个工作日对接"：上面刚承诺"1 个工作日内电话联系"，
-     两句并列就是自相矛盾，客户只会记住被拖的那句。 */
+  /* ⛔ 交付时效只许出现一次口径（SLA）：上面刚承诺过"×个工作日内电话联系"，
+     这里再冒出第二个数字＝两句并列自相矛盾，客户只会记住被拖的那句。 */
   /* AFTER.B 是函数（按课题报集名），其余是字符串 ⇒ 先判类型再拼，⛔ 直接 + 会把函数体拼进话术 */
   const af = AFTER[b] || AFTER.B;
   say(typeof af === "function" ? af(a) : af);
