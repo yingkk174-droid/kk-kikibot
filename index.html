@@ -137,6 +137,10 @@ header{
 .resume .rh{font-size:14px;color:var(--ink);line-height:1.6}
 .resume .rs{font-size:12.5px;color:var(--sub);line-height:1.7;margin:6px 0 10px}
 .resume .btn{width:100%;font-family:inherit;cursor:pointer;border:none}
+.resume .btn + .btn{margin-top:8px}   /* 主按钮与"重新选"之间留缝，⛔ 贴在一起＝看着像一条按钮 */
+/* 🔴 `.resume .btn` 的 border:none 会把 `.btn.ghost` 的描边吃掉（特异性相同、它后定义）
+   ⇒ 次要按钮变成一行纯文字，看着像不可点。这里用更高特异性把描边要回来。 */
+.resume .btn.ghost{border:1px solid var(--line)}
 .pay .zoom{display:inline-block;font-size:12.5px;color:var(--sub);margin:-2px auto 8px;text-decoration:underline}
 .pay .amt{font-size:19px;font-weight:700;color:var(--ink);letter-spacing:.3px}
 .pay .amt b{color:var(--accent);font-size:22px}
@@ -434,6 +438,13 @@ function loadProg(){
   if(Date.now() - (r.t || 0) > 72*3600*1000) return null;   /* 三天前的半成品不再打扰 */
   return r;
 }
+/* ⭐ 清档：客户点「不继续了，重新选一个方向」时用。
+   🔴 两处都要删（localStorage + cookie）：存档是**双写**的，只删 localStorage
+      ⇒ 刷新一下 cookie 那份又把续聊卡挂回来，他会以为"点了重来却回不去"（v2 的影子）。 */
+function delProg(){
+  try{ localStorage.removeItem(PROG); }catch(e){}
+  try{ document.cookie = PROG + "=;max-age=0;path=/"; }catch(e){}
+}
 
 /* ---------- 渲染 ---------- */
 function scroll(){ requestAnimationFrame(()=>chat.scrollTop = chat.scrollHeight); }
@@ -531,7 +542,17 @@ function resumeCard(r){
         : cf ? `题都答完了，就差最后一步确认。`
         : (r.p ? `点下面直接回到付款那一步。`
              : `前面那几题不用重答，点下面直接回到付款那一步。`)}</div>`
-    + `<button class="btn" id="rs">${mid ? "接着答 →" : cf ? "回去确认 →" : "回到付款那一步 →"}</button></div>`);
+    + `<button class="btn" id="rs">${mid ? "接着答 →" : cf ? "回去确认 →" : "回到付款那一步 →"}</button>`
+    /* ⭐ 重来的出口也要给：⛔ v3 里 s0 有存档直接 return，底下不再有 A–E 选项了，
+       客户万一进错分支（比如扫了别人的码）就没有退路 ⇒ 这张卡必须自带出口。
+       ⛔ 别写成"重新填一遍"（那是改单项目的措辞，这里他还没答过）。 */
+    + `<button class="btn ghost" id="rsNew">不继续了，重新选一个方向</button></div>`);
+  c.querySelector("#rsNew").onclick = ()=>{
+    delProg();
+    chat.innerHTML = ""; clearBar();
+    S.branch = ""; S.ans = {}; S.i = 0; S.paid = 0; S.stage = "s1"; S.queue = [];
+    s0main(false);   /* ⛔ 不传 true：否则 URL 上残留的 ?b= 会立刻把他开跑回原来那条分支 */
+  };
   c.querySelector("#rs").onclick = ()=>{
     S.branch = r.b;
     S.ans = a;
@@ -562,16 +583,34 @@ async function s0(){
   /* ⭐ 有未完成进度就先把续聊卡挂出来：回来的人第一眼要看到"不用重来"。
      ⛔ 不替他自动跳 —— 他可能只是点错进来的，自动重放会把开场白整个吞掉。 */
   const pr = loadProg();
-  if(pr) resumeCard(pr);
+  /* ⭐⭐ 有存档就**到此为止**（2026-10-21 第四次反馈，kk 真机实测）：
+     🔴 v2 在这里只写了 `if(pr) resumeCard(pr);` 就继续往下跑 —— 后半段会在
+        `await typing(500)` 结束时（t≈500ms）把开场白 say() 回聊天区，并把 A–E 选项
+        挂回底部栏。客户是**卡片一冒出来就点**的（≈50ms），点完 chat 已被清空，
+        于是 500ms 那份开场白插进来 ⇒ 他的观感就是"跳了一秒，又回到从头开始的对话框"。
+        更毒的是后半段还写了 `S.stage = "s1"` ⇒ 进度坐标被改回第 0 步，
+        接着这一档就是**错的**（下次跳出会被当成"刚进页面"处理）。
+     ⛔ 所以这里必须 return，⛔ 不是"挂完卡继续跑"——异步后半段一定会回来插话。
+     ⭐ 客户要重来另有出口（续聊卡上的「重新选一个方向」），⛔ 别再默认把 A–E 摆出来：
+        两条路并列＝他刚回来的那一秒又得做一次选择，多数人直接退出。 */
+  if(pr){ resumeCard(pr); return; }
+  await s0main(true);
+}
+/* ⭐ 开场主线单独抽出来：续聊卡上的「不继续了，重新选一个方向」要走的就是这一条，
+   ⛔ 别复制一份开场代码（两份迟早不同步，改了这头那头还是旧话术）。 */
+async function s0main(useDeep){
   await typing(500);
   /* ⛔ 开场不报价（S4 才报）：先让人知道能得到什么，再说多少钱。
      一上来就报 19.9 / 500 会把还在观望的人吓跑，线索直接少一半。 */
   say("你好，我是 <b>Kiki-Bot</b>，KK 团队的 AI 顾问 👋<br>我可以帮你对接五件事：链接诊断、课程试听、线下共创营、咨询预约、自研 AI Agent 体验码。<br>大概 30 秒问清情况，我按你的情况给你对应的安排（诊断报告 / 试听一集 / 席位 / 电话回联 / 体验码），并说清这一步的费用。过程中不会向第三方泄露你的信息。<br><br>先问一下：你现在最想解决的是哪一类？");
-  /* 🔴 有未完成存档时**不许**自动开跑（2026-10-21）：
-     客户是 refresh 回来的，URL 上那个 ?b=A 还在 ⇒ 会自动从第一题重答一遍，
-     把顶上那张"回到付款那一步"的续聊卡直接冲走，等于存档白存。
-     ⇒ 有存档就停在"开场白 + 续聊卡"，他自己点继续、或者从下面的选项重新选一个分支（＝真重来）。 */
-  if(PRE && BRANCH_NAME[PRE] && !pr){    /* 深链直达分支，省掉一次选择 */
+  /* ⭐⭐ 深链只对**扫码刚进来**的人生效（useDeep=true）：
+     🔴 客户点「不继续了，重新选一个方向」时 URL 上那个 ?b=A 还在，
+        若不区分，他会被直接开跑回原来那条 A 分支 ⇒ 按钮说"重新选"、实际没得选
+        （刚点的"重来"瞬间又被拽回老路，他会以为按钮坏了）。⇒ useDeep=false 时把分支选择权还给他。
+     ⭐ 能进 s0main 说明**手上没有存档**（有存档的在 s0 里已 return）⇒ 深链自动开跑是安全的：
+        ⛔ v2 靠 `&& !pr` 抑制深链、v3 靠 s0 的 return 抑制 —— 两处都写会重复，
+        且 `pr` 是 s0 的局部变量，s0main 里引用它直接 ReferenceError。 */
+  if(useDeep && PRE && BRANCH_NAME[PRE]){    /* 深链直达分支，省掉一次选择 */
     setTimeout(()=>{ say(`你要的是 <b>${BRANCH_NAME[PRE]}</b> 对吧？直接开始 👇`, true); pickBranch(PRE); }, 320);
     return;
   }
