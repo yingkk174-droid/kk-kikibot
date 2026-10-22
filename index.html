@@ -131,6 +131,7 @@ header{
 .pay .fbk.on{display:block}
 /* 兜底里的括注（"没有这一项就…"）压成灰小字：一行主指令 + 一行补丁，客户扫一眼就能照着做 */
 .pay .fbk .dim{color:var(--sub);font-size:12px}
+.pay .how .dim{color:var(--sub);font-size:12px}
 /* 续聊卡（跳出去扫一扫回来时用） */
 .resume{text-align:center}
 .resume .rh{font-size:14px;color:var(--ink);line-height:1.6}
@@ -258,9 +259,15 @@ const PAY = {
   /* ⭐ 这里只做一件事：说清"加我之后怎么付"。
      ⛔ 别在这儿也写一遍"存到相册"的三步 —— 那是兜底块（.fbk）的活，
         两处都写＝同一段话出现两次，客户读到第二遍就跳过第一段了（2026-10-21 截图里撞到）。 */
-  howWx:   "加上之后<b>直接转账给我</b>就行，不用扫任何码；也可以让我把收款码发你。<br>"
-         + "转账时在「转账说明」里写上你的名字，方便我对账。",
-  howOut:  "你现在不在微信里 —— 复制上面的号，打开微信加我，<b>转账给我</b>就行（不用扫）。<br>"
+  /* ⭐ 验证消息这句是"跳出后等你通过"那段空白期的救命稻草：客户加了好友就干等着，
+     你这边看到「新的朋友」里一条陌生请求、不知道是谁 ⇒ 一拖半天人就没了。
+     ⇒ 明说写什么，把等待压到最短（跳出成本里唯一还能再省的一段）。 */
+  howWx:   "加我时验证消息里写「海报 + 你的名字」，我这边秒通过。<br>"
+         + "加上之后<b>直接转账给我</b>就行，不用扫任何码；也可以让我把收款码发你。<br>"
+         + "转账时在「转账说明」里写上你的名字，方便我对账。<br>"
+         + "<span class=\"dim\">加完、转完就不用回这个页面了 —— 剩下的都在微信里完成。</span>",
+  howOut:  "你现在不在微信里 —— 复制上面的号，打开微信加我，验证消息里写「海报 + 你的名字」。<br>"
+         + "加上之后<b>转账给我</b>就行（不用扫）。<br>"
          + "转账时在「转账说明」里写上你的名字，方便我对账。",
   /* 文字版（没图/图挂了）专用：head 已经说了"加我微信 X，转账给我就行"，这里⛔ 别再说一遍，
      只补"不用扫"这一句消除疑虑（他看不到码，会以为流程还没完）。 */
@@ -394,22 +401,38 @@ const PROG = "kikibot_prog";
    兜底改成"点「不想加好友」自己展开"（不再靠猜）。⛔ 别把这段捡回来：
    它服务的是一条不存在的能力，留着只会让人以为"页面还能判断付款成没成功"。 */
 
-/* ⭐⭐ 进度存档（2026-10-21）：付款要"存相册 → 扫一扫"，客户**必然要离开这个页面**。
-   而他一离开（哪怕只是切到扫一扫），回来时页面多半已被回收/刷新 ⇒ 六题白答、从头再来。
-   ⛔ 上一版的兜底文案写着"付完自动回到这页，刚才聊的都还在" —— 那是**假的**，页面根本没存过。
-   ⇒ 进 S4 就存一份 {分支, 答案, 是否已点付好}，回来时一键重放到付款那一步。
-   🔴 只存**业务数据**，⛔ 不存 innerHTML：DOM 里的 onclick 是 JS 属性，序列化后再塞回去会
-      变成一堆点了没反应的死按钮（事件全丢）⇒ 恢复必须**重新走一遍渲染**，不能回放 HTML。 */
+/* ⭐⭐ 进度存档 v2（2026-10-21 三次反馈后重做）：主路径＝复制微信号→**跳去微信添加好友**，
+   跳出必然丢页面 —— 回来接不接得住，全看这份存档。v1 有三个洞，这次全堵：
+   🔴 洞1（竞态）：v1 只在 deliver() **最后一行**写档，而付款卡在函数中途就渲染了，
+      中间还隔着 3 次 typing 延时（约 2 秒）⇒ 客户看到付款卡、点完复制立刻切走，
+      存档根本没落盘。v2 改成**多点写入**：选定分支、每答完一题、进确认、进交付、
+      点复制、点兜底开关 —— 每个可能跳出前的瞬间都写一次。
+   🔴 洞2（覆盖面）：v1 只在 S4 存档 ⇒ 答题中途跳出＝六题白答。v2 存 {b,a,i,st}，
+      回来能从**第 i 题**接着答，不是只救走到付款的人。
+   🔴 洞3（单点存储）：部分微信 webview（隐私模式等）localStorage.setItem 直接抛错，
+      v1 的 try/catch 把它静默吞了 ⇒ 存档悄悄丢失。v2 双写 cookie 兜底（读时先
+      localStorage 后 cookie）。⛔ 别删 cookie 这条：它是"存了但读不回来"的唯一保险。
+   🔴 依旧只存**业务数据**，⛔ 不存 innerHTML：DOM 里的 onclick 是 JS 属性，序列化后再
+      塞回去会变成一堆点了没反应的死按钮（事件全丢）⇒ 恢复必须重新走渲染，不能回放 HTML。 */
 function saveProg(){
-  try{ localStorage.setItem(PROG, JSON.stringify({b:S.branch, a:S.ans, p:S.paid||0, t:Date.now()})); }catch(e){}
+  const d = {b:S.branch, a:S.ans, i:S.i, st:S.stage, p:S.paid||0, t:Date.now()};
+  const s = JSON.stringify(d);
+  try{ localStorage.setItem(PROG, s); }catch(e){}
+  try{ document.cookie = PROG + "=" + encodeURIComponent(s)
+       + ";max-age=" + 3*24*3600 + ";path=/;SameSite=Lax"; }catch(e){}
 }
 function loadProg(){
-  try{
-    const r = JSON.parse(localStorage.getItem(PROG) || "null");
-    if(!r || !r.b) return null;
-    if(Date.now() - r.t > 72*3600*1000) return null;   /* 三天前的半成品不再打扰 */
-    return r;
-  }catch(e){ return null; }
+  let r = null;
+  try{ r = JSON.parse(localStorage.getItem(PROG) || "null"); }catch(e){}
+  if(!r || !r.b){          /* localStorage 被清/被禁/抛错 ⇒ 读 cookie 这份 */
+    try{
+      const m = document.cookie.match(new RegExp("(?:^|;\\s*)" + PROG + "=([^;]*)"));
+      if(m) r = JSON.parse(decodeURIComponent(m[1]));
+    }catch(e){}
+  }
+  if(!r || !r.b) return null;
+  if(Date.now() - (r.t || 0) > 72*3600*1000) return null;   /* 三天前的半成品不再打扰 */
+  return r;
 }
 
 /* ---------- 渲染 ---------- */
@@ -480,19 +503,52 @@ function toast(msg){
    🔴 重放走 `deliver(true)`，⛔ 不回放 HTML：DOM 里的 onclick 是 JS 属性，
       存 innerHTML 再塞回去会得到一堆点了没反应的死按钮（事件全丢）。 */
 function resumeCard(r){
-  const amt = amount(r.b, r.a || {});
+  /* ⭐⭐ v2 分阶段恢复（2026-10-21 三次反馈）：跳出时他走到哪一步，回来就从哪一步接。
+     v1 只认一种档（S4 付款档）⇒ 答题中途/确认页跳出的人回来什么都没有。
+     st 判定：s2=答题中（按 i 接着问）、s3=确认页、s4=付款；旧档（无 st）必是 v1 的 S4 档。 */
+  const a = r.a || {};
   const who = BRANCH_NAME[r.b] || "";
+  const qLen = GEN.concat(EXT[r.b] || []).length;
+  /* 答题中：i < 总题数（⛔ 拿不准就当 s4 处理 —— 把没答完的人直接甩去付款，报价必错） */
+  const mid = r.st === "s2" && typeof r.i === "number" && r.i < qLen;
+  /* ⭐ 答完最后一道题、还没在复述卡上点确认就跳出 ⇒ 档是 {st:"s2", i:qLen}。
+     🔴 这条⛔ 不能按"回到付款那一步"放：那会跳过确认，且 deliver(true) 不推送
+        ⇒ 这条线索你永远收不到（客户还在没确认的情况下被报了价）。⇒ 一律归为回去确认。 */
+  const cf  = r.st === "s3" || (r.st === "s2" && typeof r.i === "number" && r.i >= qLen);
+  const amt = (mid || cf) ? "" : amount(r.b, a);   /* 答题中/确认页金额未定，⛔ 不显示 */
+  /* 🔴 `r.i || qLen` 是错的：i=0（刚选完分支就跳出）时 0 是 falsy ⇒ 会显示成"答到第 6/6 题"。
+     反向验证抓到过一次 ⇒ 必须判 typeof，⛔ 别用 || 给下标兜底。 */
+  const done = typeof r.i === "number" ? Math.min(r.i, qLen) : qLen;
   const c = card(`<div class="resume">`
-    + `<div class="rh">上次没走完 · <b>${who}</b>${(r.a || {}).topic ? " · " + r.a.topic : ""}`
+    + `<div class="rh">欢迎回来 · <b>${who}</b>${a.topic ? " · " + a.topic : ""}`
     + `${amt ? " · ¥" + amt : ""}</div>`
     /* ⭐ 已点过「我付好了」的，⛔ 别再让他点一次（重复推送会刷屏，还会被误判成两笔订单） */
-    + (r.p ? `<div class="rs">你已经点过「我付好了」，我这边正在核收款 —— 不用再点。</div>`
-           : `<div class="rs">前面那几题不用重答，点下面直接回到付款那一步。</div>`)
-    + `<button class="btn" id="rs">回到付款那一步 →</button></div>`);
+    + (r.p ? `<div class="rs">你已经点过「我付好了」，我这边正在核收款 —— 不用再点。</div>` : "")
+    + `<div class="rs">${mid
+        /* 🔴 i=0（刚选完分支就跳出）别显示"答到第 0/6 题"——那是句废话，还得让他疑心 */
+        ? (done === 0 ? `你刚选好方向，题还没开始答 —— 点下面接着答。`
+                      : `上次答到第 <b>${done}/${qLen}</b> 题，接着答就行，答过的不重问。`)
+        : cf ? `题都答完了，就差最后一步确认。`
+        : (r.p ? `点下面直接回到付款那一步。`
+             : `前面那几题不用重答，点下面直接回到付款那一步。`)}</div>`
+    + `<button class="btn" id="rs">${mid ? "接着答 →" : cf ? "回去确认 →" : "回到付款那一步 →"}</button></div>`);
   c.querySelector("#rs").onclick = ()=>{
-    S.branch = r.b; S.ans = r.a || {}; S.paid = r.p || 0; S.stage = "s4";
+    S.branch = r.b;
+    S.ans = a;
+    S.paid = r.p || 0;
+    S.queue = GEN.concat(EXT[r.b] || []);
     chat.innerHTML = ""; clearBar();
-    deliver(true);
+    if(mid){
+      S.stage = "s2"; S.i = r.i;
+      say("欢迎回来 👋 接着上次的继续：");
+      setTimeout(nextQ, 300);
+    }else if(cf){
+      S.stage = "s3"; S.i = S.queue.length;
+      confirm_();
+    }else{
+      S.stage = "s4"; S.i = S.queue.length;
+      deliver(true);
+    }
   };
 }
 
@@ -536,6 +592,7 @@ function pickBranch(code){
   S.branch = c; S.stage = "s2";
   S.queue = GEN.concat(EXT[c]);
   S.i = 0;
+  saveProg();            /* ⭐ 选定分支就落盘：从这一刻起任何跳出都接得住 */
   clearBar();
   setTimeout(nextQ, 380);
 }
@@ -544,7 +601,8 @@ function pickBranch(code){
 async function nextQ(){
   if(S.i >= S.queue.length){ return confirm_(); }
   await typing(420);
-  await askOne(S.queue[S.i], ()=>{ S.i++; setTimeout(nextQ, 300); });
+  /* ⭐ 每答完一题就落盘（i 已递增）：中途跳出的人回来从**下一题**接着答，六题不再白答 */
+  await askOne(S.queue[S.i], ()=>{ S.i++; saveProg(); setTimeout(nextQ, 300); });
 }
 
 /* ⭐ 渲染一题 + 收答案。走完全程（nextQ）和「改单项目」（fixOne）共用这一份，
@@ -564,12 +622,10 @@ async function askOne(q, onAns){
   }
 }
 
-/* S3 复述确认 */
-async function confirm_(){
-  S.stage = "s3";
-  const a = S.ans;
-  /* 🔴 分支专属字段必须进复述卡。原版只带 A 的 block，B/C/D 答的"想解决/体量/场景"全不显示
-     ⇒ 用户看到一张缺了自己答案的卡片，只能凭印象点"对"，确认这一步就白做了。 */
+/* ⭐⭐ 复述卡的行渲染抽成独立函数：confirm_（第一次确认）和 deliver(replay)（跳出去
+   又回来重放）共用。回来的客户第一眼要看到「我答过的都还在」，⛔ 只甩一张付款卡给他
+   —— 那看着像凭空冒出来的，他会怀疑刚才聊的丢了（2026-10-21 用户实测正是这个观感）。 */
+function recapRows(a, b){
   const detail = [];
   if(a.scale) detail.push(a.scale);
   if(a.role)  detail.push(a.role);
@@ -585,17 +641,27 @@ async function confirm_(){
   if(a.block) detail.push("卡在「" + a.block + "」");
   if(a.url)   detail.push(a.url);
   if(a.now)   detail.push("现用 " + a.now);
+  /* 🔴 分支专属字段必须进复述卡。原版只带 A 的 block，B/C/D 答的"想解决/体量/场景"全不显示
+     ⇒ 用户看到一张缺了自己答案的卡片，只能凭印象点"对"，确认这一步就白做了。 */
   const rows = [
     ["称呼", a.name], ["平台 / 品类", (a.plat||"") + " / " + (a.cat||"")],
-    ["需求", BRANCH_NAME[S.branch]],
+    ["需求", BRANCH_NAME[b] || ""],
     ["情况", detail.join(" · ")],
     ["联系方式", a.ct],
     /* ⭐ 客户手打的话要上复述卡：他确认时一眼看到"这句也被记下了"，才放心点是 */
     ["补充说明", a.note]
   ].filter(r=>r[1]);
+  return rows.map(r=>`<div class="kv"><div class="k">${r[0]}</div><div class="v">${esc(r[1])}</div></div>`).join("");
+}
+
+/* S3 复述确认 */
+async function confirm_(){
+  S.stage = "s3";
+  saveProg();            /* ⭐ 到确认这一步也落盘：确认页跳出的人回来直接回确认，不用重答 */
+  const a = S.ans;
   await typing(500);
   say("我记一下，你看对不对：");
-  card(rows.map(r=>`<div class="kv"><div class="k">${r[0]}</div><div class="v">${esc(r[1])}</div></div>`).join(""));
+  card(recapRows(a, S.branch));
   await typing(300);
   /* ⭐ 交付物已按分支分化：A=两份报告 / D=电话回联 / B,C=入口。
      ⛔ 统一说"申请链接"会让 A、D 客户等一个根本不会来的链接。 */
@@ -813,6 +879,7 @@ function payText(amt, fallback){
 function copyWx(btn){
   const t = MY_WECHAT;
   if(!t) return;
+  saveProg();   /* ⭐ 点复制＝马上要跳出去加好友：这是跳出前最后一次落盘机会 */
   const ok = ()=>{
     btn.classList.add("done");
     btn.textContent = "✅ 已复制，去微信添加我";
@@ -895,7 +962,7 @@ function paidCard(amt){
           但也⛔ 不能一声不吭 —— 客户读完这句会问"发到哪个微信?"
           ⇒ 只**指路**、不复述号码："页面最下面那行有号"。点完之后才把号写进卡里
             （那时他确实要用到这个号去加好友）。 */
-    + `<div class="tip">付完点一下，我这边马上能收到。核对完收款就${act}`
+    + `<div class="tip">付完点一下（在微信里跟我说一声也一样），我这边马上能收到。核对完收款就${act}`
     + `${MY_WECHAT ? ` —— 还没加我微信的话，上面收款卡里那个「复制微信号」按一下就行` : ""}。</div>`
     + `</div>`);
   const btn = c.querySelector("#paid"), tip = c.querySelector(".tip");
@@ -932,9 +999,19 @@ function paidCard(amt){
       只有真正第一次走完流程才推送。 */
 async function deliver(replay){
   S.stage = "s4";
+  /* ⭐ 一进来就落盘（⛔ 别等函数跑完再存）：付款卡是函数中途渲染的，客户看到卡、
+     点完复制就可能立刻切走 —— 存晚了就是白存（v1 的竞态洞，2026-10-21 三次反馈踩实）。 */
+  saveProg();
   clearBar();
   const a = S.ans, b = S.branch;
   await typing(600);
+  /* ⭐⭐ 重放先给「你的信息」回顾卡（2026-10-21 用户实测：回来只看到一张凭空冒出来的
+     付款卡，观感就是"刚才聊的全丢了"）。复用复述卡的行渲染，他一眼看到答案都在。 */
+  if(replay){
+    say("欢迎回来 👋 你刚才答的我都记着：");
+    card(recapRows(a, b));
+    await typing(300);
+  }
 
   /* ⭐ D（咨询预约）体量判定：判据是产能，不是"值不值得服务"。
      ⛔ 任何一档都不能出现"你不符合条件" —— 那等于当众否定，也掐掉一条能养的线索。 */
@@ -1019,6 +1096,7 @@ async function deliver(replay){
       const tg = pc.querySelector("#payfbkToggle");
       if(tg) tg.onclick = (e)=>{
         e.preventDefault();
+        saveProg();   /* ⭐ 展开兜底＝他要去"存相册 → 切扫一扫"，也是跳出前的一刻 */
         const f = pc.querySelector("#payfbk");
         if(!f) return;
         f.classList.toggle("on");
