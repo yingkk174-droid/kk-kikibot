@@ -176,7 +176,15 @@ header{
     </div>
   </header>
 
-  <div id="chat"></div>
+  <div id="chat">
+    <!-- ⭐⭐ 静态首屏（2026-10-22）：开场白直接写在 HTML 里，⛔ 不等 JS。
+         原因：整个页面内容原本全靠 JS 生成，而 github.io 在微信 webview 里经常
+         卡 1–3 秒甚至超时 ⇒ 那段时间 #chat 是空的，客户看到的就是"扫进去一片空白"。
+         ⛔ JS 报错 / 被拦截 / 脚本加载不出来时，这里也是唯一的兜底内容。
+         🔴 这段是开场白的**唯一真源**：JS 读它的 innerHTML 接着走，
+            ⛔ 不在 JS 里再写一份（两份迟早不同步，改了这头那头还是旧话术）。 -->
+    <div class="row" id="hello"><div class="bub">你好，我是 <b>Kiki-Bot</b>，KK 团队的 AI 顾问 👋<br>我可以帮你对接五件事：链接诊断、课程试听、线下共创营、咨询预约、自研 AI Agent 体验码。<br>大概 30 秒问清情况，我按你的情况给你对应的安排（诊断报告 / 试听一集 / 席位 / 电话回联 / 体验码），并说清这一步的费用。过程中不会向第三方泄露你的信息。<br><br>先问一下：你现在最想解决的是哪一类？</div></div>
+  </div>
 
   <div id="bar"></div>
   <div class="foot">
@@ -397,6 +405,11 @@ const RULES = [
 const S = {branch:null, queue:[], i:0, ans:{}, stage:"s0"};
 const chat = document.getElementById("chat");
 const bar  = document.getElementById("bar");
+/* ⭐ 开场白的**唯一真源**是 HTML 里那个静态 #hello（防白屏，见 body 里的注释）。
+   这里只把它的内容存一份，⛔ 不在 JS 里另写一遍文案（两份迟早不同步）。
+   用处：客户点「不继续了，重新选一个方向」会 `chat.innerHTML = ""` 把开场白一起清掉，
+        重来时得有东西可重建（否则那条路上又变回空白屏 —— 改完首屏当轮就踩到）。 */
+const HELLO_HTML = (document.getElementById("hello") || {}).innerHTML || "";
 const KEY  = "kikibot_ans";
 const PROG = "kikibot_prog";
 /* 🔴🔴 这里曾经有一个 `_leftPage` 标记（visibilitychange 判"页面有没有被盖住"），
@@ -593,16 +606,29 @@ async function s0(){
      ⛔ 所以这里必须 return，⛔ 不是"挂完卡继续跑"——异步后半段一定会回来插话。
      ⭐ 客户要重来另有出口（续聊卡上的「重新选一个方向」），⛔ 别再默认把 A–E 摆出来：
         两条路并列＝他刚回来的那一秒又得做一次选择，多数人直接退出。 */
-  if(pr){ resumeCard(pr); return; }
+  if(pr){
+    /* 🔴 回来的人只该看到续聊卡：静态首屏那句开场白必须先摘掉，
+       否则"欢迎回来"上面还压着一段"你好我是 Kiki-Bot"，观感就是回到从头（刚修好的老毛病）。 */
+    const h0 = document.getElementById("hello"); if(h0) h0.remove();
+    resumeCard(pr); return;
+  }
   await s0main(true);
 }
 /* ⭐ 开场主线单独抽出来：续聊卡上的「不继续了，重新选一个方向」要走的就是这一条，
    ⛔ 别复制一份开场代码（两份迟早不同步，改了这头那头还是旧话术）。 */
 async function s0main(useDeep){
-  await typing(500);
+  /* ⭐ 开场白在 HTML 里静态渲染（见 #hello）⇒ ⛔ 不再 say 一遍（会变成两条一模一样的）。
+     🔴 但「重新选一个方向」那条路会把 chat 清空（连 #hello 一起）⇒ 这里要按存的原文重建，
+        ⛔ 少了这步，那条路就是空白开场（首屏改完当轮 `_t_resume3` 的 restart 两档立刻报红）。 */
+  if(!document.getElementById("hello") && HELLO_HTML){
+    const r0 = document.createElement("div"); r0.className = "row"; r0.id = "hello";
+    const b0 = document.createElement("div"); b0.className = "bub"; b0.innerHTML = HELLO_HTML;
+    r0.appendChild(b0); chat.appendChild(r0);
+  }
+  /* 只留一个"正在准备选项"的打字动画过渡，别让首屏看着像卡住了 */
+  await typing(320);
   /* ⛔ 开场不报价（S4 才报）：先让人知道能得到什么，再说多少钱。
      一上来就报 19.9 / 500 会把还在观望的人吓跑，线索直接少一半。 */
-  say("你好，我是 <b>Kiki-Bot</b>，KK 团队的 AI 顾问 👋<br>我可以帮你对接五件事：链接诊断、课程试听、线下共创营、咨询预约、自研 AI Agent 体验码。<br>大概 30 秒问清情况，我按你的情况给你对应的安排（诊断报告 / 试听一集 / 席位 / 电话回联 / 体验码），并说清这一步的费用。过程中不会向第三方泄露你的信息。<br><br>先问一下：你现在最想解决的是哪一类？");
   /* ⭐⭐ 深链只对**扫码刚进来**的人生效（useDeep=true）：
      🔴 客户点「不继续了，重新选一个方向」时 URL 上那个 ?b=A 还在，
         若不区分，他会被直接开跑回原来那条 A 分支 ⇒ 按钮说"重新选"、实际没得选
