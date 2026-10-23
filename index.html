@@ -48,6 +48,8 @@ header{
 /* 退款口径小字（2026-10-21 定：体验价不退）。⭐ 刻意做小做灰：
    它是「付款前必须知道」，不是拿来劝付的卖点 ⇒ ⛔ 加粗/放大＝把风险写到脸上，白劝退一批人。 */
 .rfd{font-size:12.5px;color:var(--sub);line-height:1.7}
+/* 退款咨询的入口（灰字 + 下划线 + 手型）：⛔ 不做成按钮/不加粗 —— 摆太大＝进门先研究怎么退 */
+.rfd a{color:var(--sub);text-decoration:underline;cursor:pointer}
 .row.me .bub b{color:#D8BE82}
 .typing{display:inline-flex;gap:4px;align-items:center;height:20px}
 .typing i{width:6px;height:6px;border-radius:50%;background:#C3BCAF;animation:t 1.2s infinite}
@@ -537,6 +539,7 @@ function say(html, me){
   const b = document.createElement("div");
   b.className = "bub"; b.innerHTML = html;
   row.appendChild(b); chat.appendChild(row); scroll();
+  return row;   /* 返回节点：退款入口要拿它绑 onclick（⛔ 内联 onclick 在模板字符串里容易转义错） */
 }
 function card(html){
   const row = document.createElement("div"); row.className = "row";
@@ -1041,6 +1044,41 @@ const REFUND = {
   E: "体验价，付了不退 —— 体验码是发了就算交付的。"
 };
 
+/* ⭐⭐ 退款咨询应答（2026-10-22 用户拍板）
+   🔴 分两类，⛔ 别一刀切（跟 SLA 同一把尺子：**交付物是不是我这边现成就出得来的**）：
+     · A/B/E 体验价 = **不能退**：报告 / 正片 / 体验码都是「出了（发了）就算交付」，退了等于白干
+       ⇒ 明说「这笔退不了」，⛔⛔ 不给「可以商量」这类活话 —— 先给希望再收回去，
+          比一开始就说不退更容易吵到投诉（客户会觉得自己被耍了一次）。
+     · C/D 诚意金 = **能退**（加微信说一声）+ ⭐ **不退可抵**：这笔留着，以后上课 / 做咨询直接抵。
+   🔴🔴 C/D 的「能退」和「可抵」必须**同一句里并列**：
+       只说能退 ⇒ 本来想留的人也被推去退；只说可抵 ⇒ 想退的人以为钱被扣住（听着像霸王条款）。
+   ⛔ A/B/E 的 why 里别写「付了不退」以外的第二个数，⛔ C/D 别提手续费、别提时限
+      （用户没给这些口径 ⇒ 写就是编；真有就改这里，别在话术里另写）。 */
+const REFUND_ASK = {
+  A: {can:0, why:"两份报告是按你这条链接现出的，出了就算交付 —— 这笔退不了。"},
+  B: {can:0, why:"试听正片是发了就算交付的（你拿到就能看）—— 这笔退不了。"},
+  E: {can:0, why:"体验码是发出去就算交付的（拿到就能开）—— 这笔退不了。"},
+  /* 🔴 back 必须与 `priceLine` 里那句**同源**（C「开营前退出可退」/ D「不合适提前说可退」）：
+     ⛔ 这里若只说"能退"、不说界线，客户会理解成"任何时点都能退" ⇒ 开营后来要退，
+        页面上写着"开营前"，两句话打架，最后只能退钱平事。 */
+  C: {can:1, back:"开营前，", off:"以后开课、做咨询都能直接抵"},
+  D: {can:1, back:"排期定下来之前，", off:"以后做咨询、上课都能直接抵"}
+};
+/* ⭐ C/D 的号必须真给出来（他下一步就是去加微信），⛔ 别写「页面下面有号」——
+   他正要切走，指路等于让他自己找；A/B/E 同理：不给出口＝客户只能去投诉渠道问。 */
+function refundAsk(b){
+  const r = REFUND_ASK[b];
+  if(!r) return "";
+  const wx = MY_WECHAT ? `加我微信 <b>${MY_WECHAT}</b> 说一声` : `在微信里跟我说一声`;
+  /* ⭐ 不退也要留一个出口（客户真觉得货不对，得有地方说），但⛔ 只说"你说，我帮你看"，
+     ⛔ 不许写成"我给你重做/我给你改" —— 那是新的交付承诺，用户没给这个口径。 */
+  if(!r.can) return r.why + `真有哪里不对，${wx}，我帮你看。`;
+  /* ⭐ 先答"能退"（他问的就是这个），再接"不退也能抵"（留人的那一句）
+     ⛔ 顺序反了＝先劝他别退，听着像不想给退。 */
+  return `这笔<b>能退</b> —— ${r.back || ""}${wx}，我给你退回去。<br>`
+       + `不想退也没关系：这笔留着，${r.off}，什么时候来都行。`;
+}
+
 /* 收款块（2026-10-21 定：页面内给微信收款码图）
    🔴 三态：① 有金额 + 有图 ⇒ 图版；② 有金额 + 无图 ⇒ 文字版（加微信要码）；③ 无金额 ⇒ 整块不渲染。
    ⛔ 别用 if(PAY) 判空：PAY 是对象，恒为真，空配置也会渲染出一个空框。
@@ -1311,6 +1349,23 @@ async function deliver(replay){
     }
   }
   say(AFTER_TAIL);
+
+  /* ⭐ 退款出口（2026-10-22）：「我反悔了怎么办」是付款后问得最多的一句，
+     ⛔ 摆成按钮 / 加粗 ⇒ 每个进门的人先研究怎么退（白劝退一批）⇒ 灰字小行，**点了才展开**。
+     ⛔ 也别放进付款卡里：没付的人先读到"不退"就被劝走了；放最后一行，真要退的人自然会翻到。
+     🔴 入口本身⛔ 不写结论（只写"退款怎么办？"），展开才说 —— 结论摆在外面＝等于把风险写在脸上。 */
+  const rTxt = refundAsk(b);
+  if(rTxt){
+    const rRow = say(`<span class="rfd"><a id="rfAsk">退款怎么办？</a></span>`);
+    const rA = rRow.querySelector("#rfAsk");
+    if(rA) rA.onclick = (e)=>{
+      e.preventDefault();
+      rRow.remove();                 /* ⛔ 不删＝同一个问题能反复点，聊天里刷出好几条一样的 */
+      say(rTxt);
+      toast("已说明退款口径");
+      scroll();
+    };
+  }
 
   const f = document.createElement("div"); f.className = "hint";
   /* ⭐ 没有企微活码时，这是唯一能沉淀好友关系的一步：聊完顺手把人加到你的微信。
