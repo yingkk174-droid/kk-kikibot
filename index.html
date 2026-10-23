@@ -82,6 +82,8 @@ header{
    ⇒ 一律单行 + 省略号。值不需要看全（客户认的是字段名 + 头几位）。 */
 .opts.grid .opt{white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .inrow{display:flex; gap:8px}
+/* 常驻提问条：底部区里挨着 hint，留点间距，⛔ 别贴上去看着像一个整体 */
+.inrow.askbar{margin-top:6px}
 .inrow input{
   flex:1; border:1px solid var(--line); background:var(--card); border-radius:12px; padding:11px 14px;
   font-size:16px; color:var(--ink); font-family:inherit; outline:none; min-width:0;
@@ -583,9 +585,10 @@ function askText(ph, onSend){
   const i = document.createElement("input"); i.placeholder = ph || "输入…"; i.autocomplete = "off";
   const b = document.createElement("button"); b.textContent = "发送"; b.disabled = true;
   i.oninput = ()=>{ b.disabled = !i.value.trim(); };
-  const go = ()=>{ const v = i.value.trim(); if(!v) return; say(v, true); clearBar(); onSend(v); };
+  /* 🔴 同样要 esc()：客户手打的文本进 innerHTML（onSend 拿到的仍是原值，数据层不受影响） */
+  const go = ()=>{ const v = i.value.trim(); if(!v) return; say(esc(v), true); clearBar(); onSend(v); };
   b.onclick = go;
-  i.onkeydown = e=>{ if(e.key === "Enter") go(); };
+  i.onkeydown = e=>{ if(e.key === "Enter" && !e.isComposing) go(); };  /* 🔴 中文输入法选词也是 Enter */
   r.appendChild(i); r.appendChild(b); bar.appendChild(r);
   setTimeout(()=>i.focus(), 60);
 }
@@ -1053,7 +1056,12 @@ const REFUND = {
    🔴🔴 C/D 的「能退」和「可抵」必须**同一句里并列**：
        只说能退 ⇒ 本来想留的人也被推去退；只说可抵 ⇒ 想退的人以为钱被扣住（听着像霸王条款）。
    ⛔ A/B/E 的 why 里别写「付了不退」以外的第二个数，⛔ C/D 别提手续费、别提时限
-      （用户没给这些口径 ⇒ 写就是编；真有就改这里，别在话术里另写）。 */
+      （用户没给这些口径 ⇒ 写就是编；真有就改这里，别在话术里另写）。
+   🔴🔴 2026-10-22 **二次改判**：这些口径⛔ **不再主动铺在页面上**，改成**问了才答** ——
+      客户问到退款，才由 `answerAsk()` 调 `refundAsk()` 答这一句；
+      ⛔ 别把它摆回页面正文（结论写在脸上＝每个进门的人先研究怎么退，白劝退一批）。
+      ✅ 唯一例外是 `REFUND`（付款卡上那行"付了不退"小字）——那是**付款前的告知**，
+         删了客户可以主张"你没说不退"，争议时没凭据。 */
 const REFUND_ASK = {
   A: {can:0, why:"两份报告是按你这条链接现出的，出了就算交付 —— 这笔退不了。"},
   B: {can:0, why:"试听正片是发了就算交付的（你拿到就能看）—— 这笔退不了。"},
@@ -1077,6 +1085,105 @@ function refundAsk(b){
      ⛔ 顺序反了＝先劝他别退，听着像不想给退。 */
   return `这笔<b>能退</b> —— ${r.back || ""}${wx}，我给你退回去。<br>`
        + `不想退也没关系：这笔留着，${r.off}，什么时候来都行。`;
+}
+
+/* ⭐⭐⭐ 本地问答引擎（2026-10-22 用户拍板：**退款结论不写进文案，做成"路口 + 问了才答"**）
+   🔴 为什么是本地引擎、⛔ 不接大模型：这个页面是**零依赖单文件静态页**，没有后端。
+      接 LLM 只有两条路 —— ① key 写进前端（view-source 谁都能看 ⇒ 额度能被刷爆）；
+      ② 加一层服务端代理（那就不再是静态页，部署方式整套要改）。
+      ⇒ 走「意图匹配 + 分支口径」：命中就答，且**答案就是上面那些常量**（口径不可能答错）；
+        兜不住的就明说"这个我说不准"，并**实时推给你**（你在微信里亲自回）。
+   ⭐ 副作用是好的：客户问的每一句都有据可查（退款类与兜底类都进推送），不会像真 AI 那样瞎编口径。 */
+
+/* 点开路口后说的第一句：⛔ 不在这里给任何结论，只告诉他"可以问"。
+   ⛔ 别写成"你想问退款吗" —— 那等于替他开口，本来没想退的人也被提醒了。 */
+const ASK_GUIDE = "你说，我看着呢 —— 退款、什么时候给你、怎么付，直接打字都行。";
+
+/* 🔴🔴 意图词表：⛔ 退 用 `退(?!出)` —— 客户打「我退出」不是要退款，
+   而「我退了 / 能退吗 / 退掉」都是。⛔ 别只写具体词组（"退款"两个字），
+   客户真到了要退的时候只会打「不想要了」「后悔了」，那几句才是高频。 */
+const INTENT = [
+  {id:"refund", re:/退款|退钱|退货|退掉|退回|能退|可以退|想退|要退|怎么退|退(?!出|回)|不想要|不想去了|后悔|反悔|取消|不要了/},
+  {id:"when",   re:/多久|多长|几天|什么时候|啥时候|哪天|要等|进度|好了吗|催|快吗/},
+  {id:"price",  re:/多少钱|什么价|价格|怎么付|怎么交|怎么给钱|收费|贵|便宜|付多少/},
+  {id:"human",  re:/人工|真人|客服|顾问|找你|打电话|电话|加微信|转人工/}
+];
+function matchIntent(t){
+  const s = String(t || "");
+  for(const it of INTENT){ if(it.re.test(s)) return it.id; }
+  return null;
+}
+/* 🔴 兜底那句⛔ 不许编：答不上来就说答不上来，并给真人出口。
+   ⛔ 别写"稍后有人联系你"（页面没人值班 ⇒ 空头支票，比不答更糟）。 */
+function askFallback(){
+  return "这个我说不准，不想拿一套话糊弄你。"
+       + (MY_WECHAT ? `加我微信 <b>${MY_WECHAT}</b> 直接问我，我看到就回。` : "在微信里跟我说一声，我看到就回。");
+}
+function askHuman(){
+  const parts = [];
+  if(MY_WECHAT) parts.push(`加我微信 <b>${MY_WECHAT}</b>（备注「海报」）—— 这里是我本人在回`);
+  if(MY_TEL)    parts.push(`或打电话 <a href="tel:${MY_TEL}">${MY_TEL}</a>`);
+  return parts.length ? parts.join("；") + "。" : "";
+}
+/* ⭐⭐ 答一句客户的话
+   🔴 推送的两条判据（⛔ 别一律推，也别一律不推）：
+     · **退款类必推** —— 不管最后能不能退，有人在问退款你都得第一时间知道（晚了就是投诉）；
+     · **兜底类必推** —— 页面上没答上来，这句会掉地上，⛔ 不能让它就这么没了；
+     · 时效 / 价格 / 人工 ⛔ 不推：页面上已经答过，再推一遍＝微信里全是噪音，你会开始不看。 */
+async function answerAsk(t){
+  const id = matchIntent(t);
+  await typing(360);        /* 打字机停顿：⛔ 秒回看着像脚本，客户就不当你是个人了 */
+  if(id === "refund"){
+    const r = refundAsk(S.branch);
+    if(r){ say(r); send({ask_event:"refund", ask_q:t}); return; }
+  }
+  if(id === "when"){
+    say(`按你选的这个，${sla(S.branch)}${PAID_ACTION[S.branch] || "处理"}。有变化我在微信里跟你说一声。`);
+    return;
+  }
+  if(id === "price"){
+    const pl = priceLine(S.branch, S.ans);
+    say(pl ? pl + "<br>付法就在上面那张卡里。"
+           : (askHuman() || askFallback()));
+    return;
+  }
+  if(id === "human"){
+    say(askHuman() || askFallback());
+    return;
+  }
+  say(askFallback());
+  send({ask_event:"unknown", ask_q:t});
+}
+/* ⭐ 常驻提问条（挂一次，⛔ 别每次回答都重挂 —— 重挂会把客户正在打的字清掉） */
+function askBar(focus){
+  let i = document.getElementById("askIn");
+  if(!i){
+    const r = document.createElement("div"); r.className = "inrow askbar";
+    i = document.createElement("input");
+    i.id = "askIn"; i.autocomplete = "off"; i.placeholder = "有问题直接打字问我";
+    const b = document.createElement("button"); b.id = "askSend"; b.textContent = "发送"; b.disabled = true;
+    i.oninput = ()=>{ b.disabled = !i.value.trim(); };
+    const go = async ()=>{
+      const v = i.value.trim();
+      if(!v) return;
+      /* ⭐ 先把他那句原样贴出来（他得看见自己说了什么）
+         🔴 必须 esc()：这是**客户自己敲的文本**进 innerHTML，⛔ 不转义＝他贴一段标签进来就能改页面 */
+      say(esc(v), true);
+      i.value = ""; b.disabled = true; scroll();
+      await answerAsk(v);
+      scroll();
+      try{ i.focus(); }catch(e){}
+    };
+    b.onclick = go;
+    /* 🔴🔴 中文输入法**选词那一下也是 Enter**（此时 `e.isComposing === true`）
+       ⇒ 不判就会把半截拼音当成一句话发出去（"nengtuikuan" 发出去，客户以为你在装傻）。 */
+    i.onkeydown = e=>{ if(e.key === "Enter" && !e.isComposing) go(); };
+    r.appendChild(i); r.appendChild(b);
+    bar.appendChild(r);
+  }
+  /* ⭐ 点了路口才换 placeholder：给个例子，他才知道这儿能问什么（⛔ 别一开始就写，
+     常驻态写"比如：付了能退吗"＝每个进门的人都被提醒一次退款）。 */
+  if(focus){ i.placeholder = "比如：付了能退吗"; try{ i.focus(); }catch(e){} }
 }
 
 /* 收款块（2026-10-21 定：页面内给微信收款码图）
@@ -1350,22 +1457,23 @@ async function deliver(replay){
   }
   say(AFTER_TAIL);
 
-  /* ⭐ 退款出口（2026-10-22）：「我反悔了怎么办」是付款后问得最多的一句，
-     ⛔ 摆成按钮 / 加粗 ⇒ 每个进门的人先研究怎么退（白劝退一批）⇒ 灰字小行，**点了才展开**。
-     ⛔ 也别放进付款卡里：没付的人先读到"不退"就被劝走了；放最后一行，真要退的人自然会翻到。
-     🔴 入口本身⛔ 不写结论（只写"退款怎么办？"），展开才说 —— 结论摆在外面＝等于把风险写在脸上。 */
-  const rTxt = refundAsk(b);
-  if(rTxt){
-    const rRow = say(`<span class="rfd"><a id="rfAsk">退款怎么办？</a></span>`);
-    const rA = rRow.querySelector("#rfAsk");
-    if(rA) rA.onclick = (e)=>{
-      e.preventDefault();
-      rRow.remove();                 /* ⛔ 不删＝同一个问题能反复点，聊天里刷出好几条一样的 */
-      say(rTxt);
-      toast("已说明退款口径");
-      scroll();
-    };
-  }
+  /* ⭐⭐ 提问路口（2026-10-22 二次改判）：**退款结论不写在页面上，只留一个「可以问」的路口**。
+     ⛔ 旧写法是点一下就吐出"退不了 / 能退" —— 那等于把结论铺在页面上，
+        每个进门的人都会先读一遍退款口径，本来没想退的人也被提醒了一次（白劝退一批）。
+     ✅ 现在：入口只说**可以问什么**（退款 / 什么时候给 / 怎么付），⛔ 一个结论字都不写；
+        客户打字问到退款，才由 `answerAsk()` 按分支答（**问了才答**）。
+     🔴 输入条常驻在底部（不只挂在路口下）：客户随时能开口，⛔ 别让他还得先找到一个入口。
+     ⛔ 也别放进付款卡里：没付的人先读到"退款"就被劝走了；放最后一行，真要问的人自然会翻到。 */
+  askBar();
+  const askRow = say(`<span class="rfd"><a id="askEntry">退款、什么时候给我、怎么付 —— 有想问的，在这儿说就行</a></span>`);
+  const aA = askRow.querySelector("#askEntry");
+  if(aA) aA.onclick = (e)=>{
+    e.preventDefault();
+    askRow.remove();                 /* ⛔ 不删＝同一个入口能反复点，聊天里刷出好几条一样的 */
+    say(ASK_GUIDE);
+    askBar(true);                    /* 聚焦 + 换 placeholder（给个例子他才知道能问什么） */
+    scroll();
+  };
 
   const f = document.createElement("div"); f.className = "hint";
   /* ⭐ 没有企微活码时，这是唯一能沉淀好友关系的一步：聊完顺手把人加到你的微信。
@@ -1420,17 +1528,32 @@ function payload(extra){
     /* ⭐ 「已付款待核销」的标题前缀必须和普通线索一眼分得开：
        微信推送列表里扫一眼就知道这笔要去核账，⛔ 别混在「新线索」里一起刷。 */
     const claim = !!(extra && extra.pay_event === "paid_claim");
+    const ask   = (extra && extra.ask_event) || "";
+    /* ⭐ 前缀必须在微信推送列表里**一眼分得开**："客户问退款"是要马上处理的，
+       "客户追问（没答上来）"是要你去答的 —— 都混在「新线索」里，
+       你就会按同一个优先级扫过去，退款那句往往就漏在第二天了。 */
+    const pre = claim       ? "💰 已付款待核销 · "
+              : ask === "refund" ? "🙋 客户问退款 · "
+              : ask              ? "💬 客户追问 · " : "新线索 · ";
+    /* 🔴 客户问的原话必须进正文：你看到"有人问退款"却不知道他问的是什么 ⇒ 得回到页面猜，
+       而页面上的答案是按分支生成的，你不看原话连"他是在问能不能退、还是在说要退"都分不清。 */
+    const q = (extra && extra.ask_q) || "";
+    const askTxt = ask ? "\n\n【客户问】" + q
+                 + (ask === "refund"
+                     ? "\n待办：有人在问退款 —— 先回他一句，别让他等着（等久了就是投诉）。"
+                     : "\n待办：这句页面没答上来，你直接回他。")
+                 : "";
     return Object.assign(base, {token: SINK_TOKEN,
       /* 课题 + 金额进标题：微信推送列表里一眼看出该发什么、收多少，不用点开正文 */
       /* ⭐ 区分字段进标题：B 带课题、E 带系统（发码的人一眼知道要发哪一种码） */
-      title: (claim ? "💰 已付款待核销 · " : "新线索 · ") + BRANCH_NAME[S.branch] + (a.topic ? " · " + a.topic : "")
+      title: pre + BRANCH_NAME[S.branch] + (a.topic ? " · " + a.topic : "")
              + (a.sys ? " · " + a.sys : "") + (amt ? " · ¥" + amt : "") + (hi ? " · 高意向" : ""),
       /* ⛔ 正文里必须写明「这只是客户自称，不等于到账」——
         推送到了你微信，你随手一扫就当收钱了，回头对不上账是最难查的那种。 */
       content: claim ? t + "\n\n【客户点了「我付好了」】⚠️ 这是他自称的，不等于到账。"
                             + "\n待办：去微信支付账单，按 ¥" + amt + " + 备注名核一下，收到再"
                             + (PAID_ACTION[S.branch] || "处理") + "。"
-                     : t,
+                     : t + askTxt,
       template: "txt"});
   }
   if(SINK === "feishu"){
