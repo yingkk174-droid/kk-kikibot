@@ -166,6 +166,14 @@ header{
 .cta{text-align:center}
 .cta .btn{width:100%;font-family:inherit;cursor:pointer;border:none}
 .cta .tip{font-size:12.5px;color:var(--sub);line-height:1.7;margin-top:8px;text-align:left}
+/* 退款申请的理由框（2026-10-23）：⛔ font-size 必须 ≥16px —— iOS Safari 上 <16px 的输入框
+   获取焦点时会把整页缩放放大，回退还得手动捏回去（付款那条链上已踩过一次）。 */
+.cta textarea{
+  width:100%; box-sizing:border-box; border:1px solid var(--line); background:var(--card);
+  border-radius:12px; padding:10px 12px; font-size:16px; line-height:1.6; color:var(--ink);
+  font-family:inherit; outline:none; resize:none; min-height:62px; margin-bottom:8px;
+}
+.cta textarea:focus{border-color:var(--accent)}
 /* ⭐ 点过之后按钮变成「已受理」态：浅底 + 深字，⛔ 别只做 opacity:.55 ——
    金底白字降到 55% 之后对比度不到 3:1，客户会以为按钮坏了/没点上。
    ⛔ 也别继续用强调色：这块已经不是"要他点"，而是"回执"。 */
@@ -436,7 +444,7 @@ const RULES = [
 
 /* ---------- 状态 ---------- */
 /* known = 本轮**从档案里带过来**的基础信息项数（0 = 全新客户，四项都要问） */
-const S = {branch:null, queue:[], i:0, ans:{}, stage:"s0", known:0};
+const S = {branch:null, queue:[], i:0, ans:{}, stage:"s0", known:0, rfa:0};
 const chat = document.getElementById("chat");
 const bar  = document.getElementById("bar");
 /* ⭐ 开场白的**唯一真源**是 HTML 里那个静态 #hello（防白屏，见 body 里的注释）。
@@ -483,7 +491,9 @@ function saveProg(){
         恢复时若一律按 `GEN.concat(EXT)` 重建 ⇒ S.i 对不上题，会把"第 3 题"问成已答过的称呼。
         存 key 列表 = 队列的**形状**原样带回来，题号语义不会漂。
      ⛔ 旧档没有 qk ⇒ 走 `GEN.concat(EXT)` 的兜底（旧档本来就是没跳过任何题的那一版）。 */
-  const d = {b:S.branch, a:S.ans, i:S.i, st:S.stage, p:S.paid||0,
+  /* rfa = 退款申请是否已提交（2026-10-23）：⛔ 不存 ⇒ 他提交完跳出再回来，
+     那张卡又变回「申请退这一笔」，他会以为上次没点上，再点一次 ＝ 你这边多一条同样的申请。 */
+  const d = {b:S.branch, a:S.ans, i:S.i, st:S.stage, p:S.paid||0, r:S.rfa||0,
              qk:S.queue.map(q=>q.k).join(","), t:Date.now()};
   const s = JSON.stringify(d);
   try{ localStorage.setItem(PROG, s); }catch(e){}
@@ -541,6 +551,70 @@ function loadProfile(){
   }
   if(!r || Date.now() - (r.t || 0) > PROF_TTL) return null;
   return r;
+}
+
+/* ⭐⭐⭐ 体验去重（2026-10-23 用户拍板：**每个版块只能体验一次**）
+   🔴 粒度＝**分支级**：A / B / E 各自一次，互不占用（做完诊断想听一集试听是正常的连续需求，
+      ⛔ 做成"一个人只能体验一次"会掐掉这条线，等于把二次需求推走）。
+      ⛔ C/D 不参与：那是**诚意金锁位**，用的是他自己的钱，退了还能再锁 ⇒ 拦它毫无意义。
+   🔴🔴 为什么只做「照收 + 明说 + 标出来」，⛔⛔ **不做技术拦截**（登记照样登记）：
+      这是纯前端页面，唯一的记忆是 localStorage / cookie —— **清缓存、换浏览器、换手机即失效**。
+      ⇒ 真想撸的人一定绕得过去，被挡住的只有老老实实再来的正常客户
+        （换个手机登一下就是第二次 ⇒ 当场被拒绝，而且页面上没有申诉入口）。
+      ⇒ 正确分工：**页面负责把话说明白，判断权在你手上**（推送里带 🔁 + 第几次 + 上次时间）。
+   ⛔ 也⛔ 不能替客户做决定说"你的申请没通过"：那是拒客，且他确实可能只是上一次没收到交付。 */
+const CLAIMS = "kikibot_claims";
+const CLAIM_TTL = 30*24*3600*1000;          /* 与档案同窗口：一个人 30 天内不会变 */
+const TRIAL_BRANCH = {A:1, B:1, C:0, D:0, E:1};
+/* 🔴 联系方式必须**归一化**后再当主键：
+   同一个人可能填 "K2XAI_123456789" / "k2xai_123456789" / "+8613800000000" / "138 0000 0000"
+   ⇒ 不归一化就是四个不同的键，去重直接失效（只剩下"浏览器没换"这一个巧合条件）。
+   ⛔ 别拿 name 当主键：称呼是"张总 / 李经理"这种，重名率极高 ⇒ 会把不相干的人算成同一个。 */
+function ctKey(){
+  const v = String(S.ans.ct || "").trim().replace(/\s+/g, "").toLowerCase();
+  if(!v) return "";
+  return v.replace(/^\+?86/, "");
+}
+function loadClaims(){
+  let r = null;
+  try{ r = JSON.parse(localStorage.getItem(CLAIMS) || "null"); }catch(e){}
+  if(!r){
+    try{
+      const m = document.cookie.match(new RegExp("(?:^|;\\s*)" + CLAIMS + "=([^;]*)"));
+      if(m) r = JSON.parse(decodeURIComponent(m[1]));
+    }catch(e){}
+  }
+  return (r && typeof r === "object") ? r : {};
+}
+function saveClaims(c){
+  c.t = Date.now();
+  const s = JSON.stringify(c);
+  try{ localStorage.setItem(CLAIMS, s); }catch(e){}
+  try{ document.cookie = CLAIMS + "=" + encodeURIComponent(s)
+       + ";max-age=" + 30*24*3600 + ";path=/;SameSite=Lax"; }catch(e){}
+}
+/* 查：这个联系方式在这个版块上、30 天内申请过没有。返回 {n, t} 或 null。
+   ⛔ 没留联系方式就返回 null（⛔ 别拿空串当主键 —— 所有没填的人会被算成同一个人，误伤一片）。 */
+function claimHit(b){
+  const key = ctKey();
+  if(!key || !TRIAL_BRANCH[b]) return null;
+  const c = loadClaims();
+  if(Date.now() - (c.t || 0) > CLAIM_TTL) return null;   /* 整份过期 ⇒ 当作全新 */
+  const m = c[key] && c[key][b];
+  if(!m || Date.now() - (m.t || 0) > CLAIM_TTL) return null;
+  return m;
+}
+/* 记：只在**真正登记完**时落一笔（deliver 走完、且不是重放）。
+   ⛔ 别在答题中途记：那等于"没走完也占掉一次名额"，真有事没办成的人被永久记为已用。 */
+function claimMark(b){
+  const key = ctKey();
+  if(!key || !TRIAL_BRANCH[b]) return;
+  const c = loadClaims();
+  if(Date.now() - (c.t || 0) > CLAIM_TTL){
+    for(const k in c){ if(k !== "t") delete c[k]; }      /* 整份过期 ⇒ 清干净再记，别让旧 key 占字节 */
+  }
+  (c[key] = c[key] || {})[b] = {n: ((c[key][b] || {}).n || 0) + 1, t: Date.now()};
+  saveClaims(c);
 }
 
 /* ---------- 渲染 ---------- */
@@ -656,13 +730,16 @@ function resumeCard(r){
   c.querySelector("#rsNew").onclick = ()=>{
     delProg();
     chat.innerHTML = ""; clearBar();
-    S.branch = ""; S.ans = {}; S.i = 0; S.paid = 0; S.stage = "s1"; S.queue = [];
+    /* rfa 跟着 paid 一起清零：这里连"已付"都重置了，留着一个 rfa=1（"已申请退款"）
+       却没有对应的那一笔 ⇒ 状态自相矛盾，后面问到退款会看到一张不该消失又可点的卡。 */
+    S.branch = ""; S.ans = {}; S.i = 0; S.paid = 0; S.rfa = 0; S.stage = "s1"; S.queue = [];
     s0main(false);   /* ⛔ 不传 true：否则 URL 上残留的 ?b= 会立刻把他开跑回原来那条分支 */
   };
   c.querySelector("#rs").onclick = ()=>{
     S.branch = r.b;
     S.ans = a;
     S.paid = r.p || 0;
+    S.rfa  = r.r || 0;
     /* ⭐ 用上面重建出来的队列（形状与存档一致），⛔ 别再按全集拼一次：
        拼回去就会把已经答过的基础项重新排进队列，S.i 又是错位那一套。 */
     S.queue = queue.slice();
@@ -1065,7 +1142,8 @@ const REFUND = {
      · A/B/E 体验价 = **不能退**：报告 / 正片 / 体验码都是「出了（发了）就算交付」，退了等于白干
        ⇒ 明说「这笔退不了」，⛔⛔ 不给「可以商量」这类活话 —— 先给希望再收回去，
           比一开始就说不退更容易吵到投诉（客户会觉得自己被耍了一次）。
-     · C/D 诚意金 = **能退**（加微信说一声）+ ⭐ **不退可抵**：这笔留着，以后上课 / 做咨询直接抵。
+     · C/D 诚意金 = **能退**（在页面里点「申请退款」，见下面的 `refundApplyCard()`）
+       + ⭐ **不退可抵**：这笔留着，以后上课 / 做咨询直接抵。
    🔴🔴 C/D 的「能退」和「可抵」必须**同一句里并列**：
        只说能退 ⇒ 本来想留的人也被推去退；只说可抵 ⇒ 想退的人以为钱被扣住（听着像霸王条款）。
    ⛔ A/B/E 的 why 里别写「付了不退」以外的第二个数，⛔ C/D 别提手续费、别提时限
@@ -1085,21 +1163,66 @@ const REFUND_ASK = {
   C: {can:1, back:"开营前，", off:"以后开课、做咨询都能直接抵"},
   D: {can:1, back:"排期定下来之前，", off:"以后做咨询、上课都能直接抵"}
 };
-/* ⭐ C/D 的号必须真给出来（他下一步就是去加微信），⛔ 别写「页面下面有号」——
-   他正要切走，指路等于让他自己找；A/B/E 同理：不给出口＝客户只能去投诉渠道问。 */
+/* ⭐⭐ 退款链路（2026-10-23 用户拍板，⛔ 这一次把整条链定死了）
+       AI 顾问先沟通 → **符合条件的**才能在页面里点「申请退款」→ 申请推给 kk → kk 核完确认，才把钱退给对方。
+   🔴🔴 微信在这条链上只是「想聊就加」的**可选项**，⛔ 不是必经步骤：
+       ⛔ 旧写法「${ wx }，我给你退回去」把加微信写成了退款的前置条件 ——
+          客户为了退一笔钱必须先去加好友、等通过、再说一遍，中间任何一步掉链子他就去投诉渠道了。
+       ✅ 主路径 = 页面里点一下（不用加任何人）；微信只作为"想先聊聊"的**并列选项**，
+          且必须写明「不加不影响受理」（⛔ 不写这句＝客户还是会以为不加就退不了）。
+   🔴 退款不是结束的那个动作：`refundApplyCard()` 才是 —— 这里只把话说明白，按钮由它出。
+   ⛔ A/B/E ⛔ 不给按钮：给了就得受理 ⇒ 等于当众推翻「体验价不退」这条口径。 */
 function refundAsk(b){
   const r = REFUND_ASK[b];
   if(!r) return "";
-  /* ⭐ 号用 `wxChip()`（可点复制）：问退款的人下一步就是去加微信，
-     ⛔ 给一串只能手抄的字，他切出去搜的时候必输错一次。 */
-  const wx = MY_WECHAT ? wxChip() : `在微信里跟我说一声`;
-  /* ⭐ 不退也要留一个出口（客户真觉得货不对，得有地方说），但⛔ 只说"你说，我帮你看"，
-     ⛔ 不许写成"我给你重做/我给你改" —— 那是新的交付承诺，用户没给这个口径。 */
-  if(!r.can) return r.why + `真有哪里不对，${wx}，我帮你看。`;
+  /* ⭐ 不能退：也要留一个沟通出口（客户真觉得货不对得有地方说），
+     ⛔ 只说"你说，我帮你看"，⛔ 不许写成"我给你重做/我给你改" —— 那是新的交付承诺，你没给这个口径。
+     ⛔ 也不给申请按钮 —— 不符合条件的人点了，那笔账你到底受理还是不受理？ */
+  if(!r.can){
+    return r.why + (MY_WECHAT
+      ? `真有哪里不对想跟我说的，${wxChip()} 就行 —— 加不加都行，你说了我才看得到。`
+      : `真有哪里不对想跟我说，就在微信里找我说一声。`);
+  }
   /* ⭐ 先答"能退"（他问的就是这个），再接"不退也能抵"（留人的那一句）
      ⛔ 顺序反了＝先劝他别退，听着像不想给退。 */
-  return `这笔<b>能退</b> —— ${r.back || ""}${wx}，我给你退回去。<br>`
+  return `这笔<b>能退</b> —— ${r.back || ""}点下面的「申请退款」就行，我核过就原路退给你。<br>`
        + `不想退也没关系：这笔留着，${r.off}，什么时候来都行。`;
+}
+
+/* ⭐⭐ 退款申请卡（2026-10-23）
+   🔴 为什么要有这一步、⛔ 不能只让他去加微信：
+      加好友是"他得先做成一件事才能开口"，中间要过搜索、通过、再说一遍 ⇒ 急着要钱的人直接去投诉。
+      ⇒ 页面里给他一个**一步到位**的入口；申请落到你微信，你核完再退。
+   🔴🔴 页面⛔ 不许说"钱已退" / "已同意退款" / "3 天内到账"：
+      退不退是**你核完才定的**（要确认是不是他本人、这笔到底收没收、退到哪），
+      页面替你答应了 ⇒ 客户拿这句来要钱，而你这边还没看 ⇒ 一定吵架。
+      （跟 `paidCard()` 同理：页面只能说"收到申请/收到已付"，⛔ 不能替核账的结果。）
+   ⛔ 一张卡只出一次：`S.rfa` 挡重复点 ⇒ 反复推送会让你这边刷屏，还会被误判成好几笔退款。 */
+function refundApplyCard(q0){
+  const c = card(`<div class="cta">`
+    + `<textarea id="rfWhy" placeholder="想说点什么就写一句（选填）：为什么不想继续了 / 当时付了多少"></textarea>`
+    + `<button class="btn" id="rfApply">申请退这一笔</button>`
+    + `<div class="tip">点一下就收到你的申请 —— 我核过把钱原路退给你，退好了在微信里说一声。`
+    + (MY_WECHAT ? `想先聊两句也行：${wxChip()}（<b>不加不影响受理</b>，申请照样收）。` : "")
+    + `</div></div>`);
+  const btn = c.querySelector("#rfApply"), why = c.querySelector("#rfWhy"), tip = c.querySelector(".tip");
+  btn.onclick = ()=>{
+    if(S.rfa) return;              /* ⛔ 连点＝重复推送 */
+    S.rfa = 1;
+    saveProg();                    /* ⭐ 存下来：他提交完可能立刻切走，回来这张卡不能又变回可点 */
+    btn.disabled = true;
+    btn.classList.add("done");     /* 回执外观，见 .cta .btn.done */
+    btn.textContent = "✅ 申请已提交，等确认";
+    if(why){ why.disabled = true; why.style.display = "none"; }
+    tip.innerHTML = `收到了 —— 我核一下这笔，确认能退就把钱原路退给你。`
+      + (MY_WECHAT ? `想催或者改主意，${wxChip()} 找我就行。` : "");
+    bindWx(tip);
+    send({pay_status:"退款申请已提交", rf_event:"refund_apply",
+          rf_reason:(why && why.value ? why.value.trim() : ""), ask_q:q0 || ""});
+    toast("申请已提交，他那边马上能看到");
+    scroll();
+  };
+  return c;
 }
 
 /* ⭐⭐⭐ 本地问答引擎（2026-10-22 用户拍板：**退款结论不写进文案，做成"路口 + 问了才答"**）
@@ -1150,9 +1273,9 @@ async function answerAsk(t){
   await typing(360);        /* 打字机停顿：⛔ 秒回看着像脚本，客户就不当你是个人了 */
   /* ⭐ 先把答案算出来，最后**统一 say 一次**（⛔ 别在每个分支里各 say 一遍：
      补微信出口那一步就会漏掉某一支 —— 漏的那一支正是"AI 答不上来"的那句） */
-  let html = "", ev = "";
+  let html = "", ev = "", r = null;
   const rf = (id === "refund") ? refundAsk(S.branch) : "";
-  if(rf)                   { html = rf; ev = "refund"; }
+  if(rf)                   { html = rf; ev = "refund"; r = REFUND_ASK[S.branch]; }
   else if(id === "when")    html = `按你选的这个，${sla(S.branch)}${PAID_ACTION[S.branch] || "处理"}。有变化我在微信里跟你说一声。`;
   else if(id === "price"){
     const pl = priceLine(S.branch, S.ans);
@@ -1160,8 +1283,16 @@ async function answerAsk(t){
   }
   else if(id === "human")   html = askHuman() || askFallback();
   else                    { html = askFallback(); ev = "unknown"; }
-  say(wxTail(html));
+  /* 🔴 能退的分支⛔ 不再由 `wxTail()` 补号：紧接着那张申请卡里已经有号了，
+     同屏连着两处号（再加底部常驻就是三处）＝复读机，号反而不显眼（2026-10-23 截图踩到）。
+     ⇒ 号跟着"卡"走：卡是这一步的主行动，号只是卡上的可选项。 */
+  say((r && r.can) ? html : wxTail(html));
   if(ev) send({ask_event:ev, ask_q:t});
+  /* ⭐ 只有**符合条件**（C/D 能退）的分支才出申请卡，且一次会话只出一张。
+     ⛔ A/B/E 不给：那三个分支的口径就是不退，摆个按钮＝给了受理承诺，两句话打架。
+     ⛔ 已提交过就不再挂（S.rfa）：他再问一次退款不该看到第二个按钮，
+        那会让他怀疑"刚才那次算不算"，然后两处都点一遍。 */
+  if(r && r.can && !S.rfa) refundApplyCard(t);
 }
 /* ⭐⭐ 答完统一补一个微信出口（2026-10-22）
    🔴 只在这句里**没出现过号**时才补：退款 / 兜底 / 人工那几句的正文里已经带号了，
@@ -1384,6 +1515,9 @@ async function deliver(replay){
   saveProg();
   clearBar();
   const a = S.ans, b = S.branch;
+  /* ⭐ 去重查要在**记账之前**（先查后记，否则这一笔自己就把自己算成重复了）。
+     ⛔ replay 不查：重放是"同一次登记换个页面继续"，不是第二次申请 ⇒ 查了必误报。 */
+  const dup = (!replay && TRIAL_BRANCH[b]) ? claimHit(b) : null;
   await typing(600);
   /* ⭐⭐ 重放先给「你的信息」回顾卡（2026-10-21 用户实测：回来只看到一张凭空冒出来的
      付款卡，观感就是"刚才聊的全丢了"）。复用复述卡的行渲染，他一眼看到答案都在。 */
@@ -1498,6 +1632,12 @@ async function deliver(replay){
       paidCard(amt);
     }
   }
+  /* ⭐ 重复体验说明（2026-10-23）：放在最后这一段，⛔ 别插到付款卡前面 ——
+     那是"我还没付你就先怀疑我"，正常客户也会被这句话赶走；放到收尾，真重复的那个人自然看得到。
+     ⛔ 措辞必须是"同一份不会再出第二份 + 我会先跟你确认"，⛔ 不许写成"你不符合条件 / 申请没通过"
+       （他可能上一次确实没收到交付，当众判定会把一个真客户推走）。 */
+  if(dup) say(`<span class="rfd">这个联系方式 30 天内已经登记过一次「${BRANCH_NAME[b]}」了 —— `
+            + `同一个版块的体验价每人只出一次，这份我收到后会先在微信里跟你确认一句。</span>`);
   say(AFTER_TAIL);
 
   /* ⭐⭐ 提问路口（2026-10-22 二次改判）：**退款结论不写在页面上，只留一个「可以问」的路口**。
@@ -1531,8 +1671,17 @@ async function deliver(replay){
   else { f.innerHTML = parts.join("<br>"); bar.appendChild(f); bindWx(f); }
 
   /* ⛔ 重放不推送：见 deliver(replay) 的注释 —— 否则你微信里会再刷一条同样的线索 */
-  if(!replay) send();
-  window.__LEAD__ = payload();
+  /* ⭐ 重复标记进 extra（不污染 base 的业务字段）：推送标题因此自动带上 🔁 前缀。
+     ⛔ dup 必须在**记账之后**才准：这里 dup 是在函数开头查的（记账前），所以顺序是对的。 */
+  const dupExtra = dup
+    ? {claim_dup:(dup.n || 0) + 1, claim_last:new Date(dup.t).toISOString()} : null;
+  if(!replay){
+    /* ⭐ 记账放在推送**之前**：否则这条线索自己看不到"是第几次"，标题上没有 🔁。
+       且必须在 dup 算完之后再记（⛔ 反过来记 ⇒ 第一次申请就被当成第二次，当场误伤）。 */
+    claimMark(b);
+    send(dupExtra || undefined);
+  }
+  window.__LEAD__ = payload(dupExtra || undefined);
   try{ localStorage.setItem(KEY, JSON.stringify(window.__LEAD__)); }catch(e){}
   /* ⭐ 走到这一步就存档：客户接下来很可能要跳去扫一扫，回来靠这个重放（见 resumeCard） */
   saveProg();
@@ -1573,15 +1722,41 @@ function payload(extra){
        微信推送列表里扫一眼就知道这笔要去核账，⛔ 别混在「新线索」里一起刷。 */
     const claim = !!(extra && extra.pay_event === "paid_claim");
     const ask   = (extra && extra.ask_event) || "";
+    /* 🔄 退款申请（2026-10-23）：这是**流程里唯一需要你掏钱的动作**，优先级高于其他，
+       ⇒ 前缀必须一眼分得开；⛔ 混在「客户问退款」里 ＝ 你以为只是咨询，错过处理。 */
+    const rfApp = !!(extra && extra.rf_event === "refund_apply");
+    /* 🔁 重复体验（2026-10-23）：同一个人第二个版块不用管，**同一个版块第二次**才需要你先看一眼 */
+    const dupN  = (extra && extra.claim_dup) || 0;
     /* ⭐ 前缀必须在微信推送列表里**一眼分得开**："客户问退款"是要马上处理的，
        "客户追问（没答上来）"是要你去答的 —— 都混在「新线索」里，
        你就会按同一个优先级扫过去，退款那句往往就漏在第二天了。 */
     const pre = claim       ? "💰 已付款待核销 · "
+              : rfApp       ? "🔄 客户申请退款 · "
+              : dupN        ? "🔁 重复版块第" + dupN + "次 · "
               : ask === "refund" ? "🙋 客户问退款 · "
               : ask              ? "💬 客户追问 · " : "新线索 · ";
     /* 🔴 客户问的原话必须进正文：你看到"有人问退款"却不知道他问的是什么 ⇒ 得回到页面猜，
        而页面上的答案是按分支生成的，你不看原话连"他是在问能不能退、还是在说要退"都分不清。 */
     const q = (extra && extra.ask_q) || "";
+    /* 🔴 退款申请必须带上**核对三件套**：是哪一笔（金额 / 版块）、为什么退（客户自己写的理由）、
+       退给谁（联系方式）。少了任何一件，你都得回页面翻 —— 而客户正在等钱，那几分钟很贵。 */
+    const rfTxt = rfApp
+      ? "\n\n【客户点了「申请退款」】\n退的是：" + (feeText(S.branch, a).replace(/^应付：/, ""))
+        + "\n退给：" + (a.ct || "-") + "（" + (a.name || "-") + "）"
+        + ((extra && extra.rf_reason) ? "\n客户写的理由：" + extra.rf_reason : "")
+        /* 🔴 他申请前问的那句也要进正文：`ask_q` 虽然在结构化字段里，但你扫的是推送那一屏，
+           ⛔ 只靠结构化字段＝必须回到后台翻 ⇒ 跟"看不出他问了什么"是一回事。 */
+        + (q ? "\n他申请前问的是：" + q : "")
+        + "\n待办：① 认一下是不是本人、这笔收没收 ② 确认能退就原路退回去，并在微信里跟他说一声"
+        + " ③ 退不了的话也要回他一句为什么（⛔ 别让他干等，等久了就是投诉）。"
+      : "";
+    /* 🔁 重复标记：给"要不要再发一份"的判断依据，⛔ 别替 kk 下结论 */
+    const dupTxt = dupN
+      ? "\n\n⚠️ 这个联系方式 30 天内第 " + dupN + " 次登记「" + BRANCH_NAME[S.branch] + "」"
+        + "（上次：" + (extra && extra.claim_last ? String(extra.claim_last).slice(0,10) : "-") + "）"
+        + "\n同一版块的体验价每人只出一次 ⇒ 先确认是不是本人换号/换手机重来（上一次是不是没交付成），"
+        + "\n确定是重复就不要再出第二份，回他一句说明就行。"
+      : "";
     const askTxt = ask ? "\n\n【客户问】" + q
                  + (ask === "refund"
                      ? "\n待办：有人在问退款 —— 先回他一句，别让他等着（等久了就是投诉）。"
@@ -1597,7 +1772,7 @@ function payload(extra){
       content: claim ? t + "\n\n【客户点了「我付好了」】⚠️ 这是他自称的，不等于到账。"
                             + "\n待办：去微信支付账单，按 ¥" + amt + " + 备注名核一下，收到再"
                             + (PAID_ACTION[S.branch] || "处理") + "。"
-                     : t + askTxt,
+                     : t + rfTxt + dupTxt + askTxt,
       template: "txt"});
   }
   if(SINK === "feishu"){
