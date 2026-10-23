@@ -50,6 +50,16 @@ header{
 .rfd{font-size:12.5px;color:var(--sub);line-height:1.7}
 /* 退款咨询的入口（灰字 + 下划线 + 手型）：⛔ 不做成按钮/不加粗 —— 摆太大＝进门先研究怎么退 */
 .rfd a{color:var(--sub);text-decoration:underline;cursor:pointer}
+/* ⭐⭐ 可点一下就复制的微信号（2026-10-22 用户拍板：**AI 答不上来时，客户至少能加到我的微信**）
+   ⛔ 只把号印成字＝他要手抄十来位字母数字混排再切去微信搜，中间必掉人（付款链上已踩过一次）。
+   ⛔⛔ 也⛔ 不做成实心大按钮：这是**退路**，摆得比主行动还大＝整页变成"加微信"广告，
+       而且付款卡上那个「复制微信号」按钮会被比下去（两处都大＝客户不知道先点哪个）。
+   ✅ 形态＝正文里的可点链接（下划线 + 手型 + 号本身加粗），提示靠 ::after 的小灰字补，
+       复制成功后整段换成回执（.done），失败（旧 webview）换成可长按的纯文本（.plain）。 */
+.wxcp{color:var(--ink);text-decoration:underline;cursor:pointer}
+.wxcp::after{content:"（点一下复制）";font-size:12px;color:var(--sub);margin-left:2px}
+.wxcp.done,.wxcp.plain{color:var(--sub);text-decoration:none;cursor:default}
+.wxcp.done::after,.wxcp.plain::after{content:""}
 .row.me .bub b{color:#D8BE82}
 .typing{display:inline-flex;gap:4px;align-items:center;height:20px}
 .typing i{width:6px;height:6px;border-radius:50%;background:#C3BCAF;animation:t 1.2s infinite}
@@ -540,13 +550,13 @@ function say(html, me){
   row.className = "row" + (me ? " me" : "");
   const b = document.createElement("div");
   b.className = "bub"; b.innerHTML = html;
-  row.appendChild(b); chat.appendChild(row); scroll();
+  row.appendChild(b); chat.appendChild(row); bindWx(row); scroll();
   return row;   /* 返回节点：退款入口要拿它绑 onclick（⛔ 内联 onclick 在模板字符串里容易转义错） */
 }
 function card(html){
   const row = document.createElement("div"); row.className = "row";
-  const c = document.createElement("div"); c.className = "card"; c.innerHTML = html;
-  row.appendChild(c); chat.appendChild(row); scroll();
+  const c = document.createElement("div");   c.className = "card"; c.innerHTML = html;
+  row.appendChild(c); chat.appendChild(row); bindWx(row); scroll();
   return c;   /* 返回节点：收款卡要拿它绑图片的 onerror（⛔ 内联 onerror 在模板字符串里容易转义错） */
 }
 function typing(ms){
@@ -1080,7 +1090,9 @@ const REFUND_ASK = {
 function refundAsk(b){
   const r = REFUND_ASK[b];
   if(!r) return "";
-  const wx = MY_WECHAT ? `加我微信 <b>${MY_WECHAT}</b> 说一声` : `在微信里跟我说一声`;
+  /* ⭐ 号用 `wxChip()`（可点复制）：问退款的人下一步就是去加微信，
+     ⛔ 给一串只能手抄的字，他切出去搜的时候必输错一次。 */
+  const wx = MY_WECHAT ? wxChip() : `在微信里跟我说一声`;
   /* ⭐ 不退也要留一个出口（客户真觉得货不对，得有地方说），但⛔ 只说"你说，我帮你看"，
      ⛔ 不许写成"我给你重做/我给你改" —— 那是新的交付承诺，用户没给这个口径。 */
   if(!r.can) return r.why + `真有哪里不对，${wx}，我帮你看。`;
@@ -1120,11 +1132,11 @@ function matchIntent(t){
    ⛔ 别写"稍后有人联系你"（页面没人值班 ⇒ 空头支票，比不答更糟）。 */
 function askFallback(){
   return "这个我说不准，不想拿一套话糊弄你。"
-       + (MY_WECHAT ? `加我微信 <b>${MY_WECHAT}</b> 直接问我，我看到就回。` : "在微信里跟我说一声，我看到就回。");
+       + (MY_WECHAT ? `${wxChip()}直接问我，我看到就回。` : "在微信里跟我说一声，我看到就回。");
 }
 function askHuman(){
   const parts = [];
-  if(MY_WECHAT) parts.push(`加我微信 <b>${MY_WECHAT}</b>（备注「海报」）—— 这里是我本人在回`);
+  if(MY_WECHAT) parts.push(`${wxChip()}（备注「海报」）—— 这里是我本人在回`);
   if(MY_TEL)    parts.push(`或打电话 <a href="tel:${MY_TEL}">${MY_TEL}</a>`);
   return parts.length ? parts.join("；") + "。" : "";
 }
@@ -1136,26 +1148,31 @@ function askHuman(){
 async function answerAsk(t){
   const id = matchIntent(t);
   await typing(360);        /* 打字机停顿：⛔ 秒回看着像脚本，客户就不当你是个人了 */
-  if(id === "refund"){
-    const r = refundAsk(S.branch);
-    if(r){ say(r); send({ask_event:"refund", ask_q:t}); return; }
-  }
-  if(id === "when"){
-    say(`按你选的这个，${sla(S.branch)}${PAID_ACTION[S.branch] || "处理"}。有变化我在微信里跟你说一声。`);
-    return;
-  }
-  if(id === "price"){
+  /* ⭐ 先把答案算出来，最后**统一 say 一次**（⛔ 别在每个分支里各 say 一遍：
+     补微信出口那一步就会漏掉某一支 —— 漏的那一支正是"AI 答不上来"的那句） */
+  let html = "", ev = "";
+  const rf = (id === "refund") ? refundAsk(S.branch) : "";
+  if(rf)                   { html = rf; ev = "refund"; }
+  else if(id === "when")    html = `按你选的这个，${sla(S.branch)}${PAID_ACTION[S.branch] || "处理"}。有变化我在微信里跟你说一声。`;
+  else if(id === "price"){
     const pl = priceLine(S.branch, S.ans);
-    say(pl ? pl + "<br>付法就在上面那张卡里。"
-           : (askHuman() || askFallback()));
-    return;
+    html = pl ? pl + "<br>付法就在上面那张卡里。" : (askHuman() || askFallback());
   }
-  if(id === "human"){
-    say(askHuman() || askFallback());
-    return;
-  }
-  say(askFallback());
-  send({ask_event:"unknown", ask_q:t});
+  else if(id === "human")   html = askHuman() || askFallback();
+  else                    { html = askFallback(); ev = "unknown"; }
+  say(wxTail(html));
+  if(ev) send({ask_event:ev, ask_q:t});
+}
+/* ⭐⭐ 答完统一补一个微信出口（2026-10-22）
+   🔴 只在这句里**没出现过号**时才补：退款 / 兜底 / 人工那几句的正文里已经带号了，
+      ⛔ 再补一条＝同一个气泡里两遍号，看着像复读机，反而不敢点。
+   🔴 为什么连"答得上来"的（时效 / 价格）也要补：本地引擎答对的是**字面**，
+      客户真正想问的往往在下一句 —— ⛔ 出口只给在兜底里＝他得先被答不上来一次才看得到号。 */
+function wxTail(html){
+  if(!MY_WECHAT || html.indexOf(MY_WECHAT) >= 0) return html;
+  /* ⛔ 别在补句里再写一次"微信"：时效那句本来就有「有变化我在微信里跟你说一声」，
+     同屏两遍＝读着像复读，号反而不显眼。补句只干一件事：把号递到手上。 */
+  return html + `<br><span class="rfd">还有别的想问的，${wxChip()}。</span>`;
 }
 /* ⭐ 常驻提问条（挂一次，⛔ 别每次回答都重挂 —— 重挂会把客户正在打的字清掉） */
 function askBar(focus){
@@ -1220,7 +1237,8 @@ function copyWx(btn){
     btn.textContent = "✅ 已复制，去微信添加我";
     toast("微信号已复制，去微信添加我");
   };
-  const showPlain = ()=>{ btn.textContent = `微信号：${t}（长按可复制）`; };
+  /* ⭐ 复制 API 挂了就把号**原地摊开**成纯文本（他能长按复制，⛔ 别留一个点了没反应的链接） */
+  const showPlain = ()=>{ btn.classList.add("plain"); btn.textContent = `微信号：${t}（长按可复制）`; };
   const legacy = ()=>{
     let done = false;
     try{
@@ -1237,6 +1255,28 @@ function copyWx(btn){
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(t).then(ok).catch(legacy);
   } else legacy();
+}
+
+/* ⭐⭐⭐ 微信出口（2026-10-22 用户拍板：**AI 客服答不上来时，客户至少能加到我的微信**）
+   🔴 为什么每句回答都要带一个能点的号：
+      本地引擎只认词表，客户换个说法就掉进兜底 ⇒ **兜底才是高频场景**。
+      ⛔ 兜底里不给出口＝他把页面一关，这个人就彻底没了 —— 你这边只收到一句"有人问了"，
+         但**他不知道有人在回**，下一次就是去投诉渠道问了。
+   🔴 为什么必须是"点一下复制"而不是印个字：微信号十来位混排，手抄必掉人。
+   ⛔ MY_WECHAT 没配就返回空串（⛔ 别渲染一个"加我微信"却没有号，也别写"在微信里找我"却找不到）。 */
+let __wxSeq = 0;
+function wxChip(){
+  if(!MY_WECHAT) return "";
+  return `<a class="wxcp" id="wxcp${++__wxSeq}">加我微信 <b>${MY_WECHAT}</b></a>`;
+}
+/* 🔴 绑定只能等节点进 DOM 之后（innerHTML 赋完才有元素可查）。
+   ⛔ 内联 onclick：模板字符串里引号容易转义错，而且 esc() 会把引号变实体 ⇒ 点了没反应。 */
+function bindWx(scope){
+  (scope || document).querySelectorAll("a.wxcp").forEach(a=>{
+    if(a.dataset.wx) return;                 /* ⛔ 重复绑＝点一次触发两回，弹两次 toast */
+    a.dataset.wx = "1";
+    a.onclick = e=>{ e.preventDefault(); copyWx(a); };
+  });
 }
 function payBlock(amt){
   if(amt === "" || amt == null) return "";
@@ -1484,10 +1524,11 @@ async function deliver(replay){
   /* 🔴 同理：⛔ 不写「回复『人工』」——这里没有输入框可回。
      两个出口（微信 / 电话）谁有值就渲染谁；⚠️ 都没有就**整块不挂**，别留一个空框。 */
   const parts = [];
-  if(MY_WECHAT) parts.push(`想直接聊：加我微信 <b>${MY_WECHAT}</b>，备注「海报」`);
+  /* ⭐ 底部这行是**不问也能加微信**的常驻出口（⛔ 号只做成文字＝手抄十来位必抄错） */
+  if(MY_WECHAT) parts.push(`想直接聊：${wxChip()}，备注「海报」`);
   if(MY_TEL)    parts.push(`或直接打电话 <a href="tel:${MY_TEL}">${MY_TEL}</a>`);
   if(!parts.length) f.remove();
-  else { f.innerHTML = parts.join("<br>"); bar.appendChild(f); }
+  else { f.innerHTML = parts.join("<br>"); bar.appendChild(f); bindWx(f); }
 
   /* ⛔ 重放不推送：见 deliver(replay) 的注释 —— 否则你微信里会再刷一条同样的线索 */
   if(!replay) send();
