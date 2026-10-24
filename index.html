@@ -347,6 +347,12 @@ const PUSHPLUS_URL = "https://www.pushplus.plus/send";
 const WEBHOOK = "";         // 仅 wecom / feishu / raw 需要；pushplus 不用填（走内置端点）
 const MENTION_HIGH = false; // 仅 wecom：高意向线索（D 分支 + 亿级/千万级）在群里 @所有人
 
+/* 课件/客户后台（course_admin）的地址。⛔ **留空 = 这整段不执行**，已上线的页面行为零变化。
+   填了之后，每条线索在推微信的**同时**多写一份进后台 CRM（自动建档、自动查重），
+   你不用再手抄一遍手机号。后台那边对应环境变量 LEAD_TOKEN，两边必须一致。 */
+const CRM_API = "https://kk-course-admin-production.up.railway.app";   // ⛔ 结尾不要带斜杠
+const CRM_TOK = "17a823ff78eb52659c194655";                            // 与后台 LEAD_TOKEN 一致，改一边必改另一边
+
 /* 🔴 各接收端的差异不是"换 URL"，是"换协议"，别只改 URL 不改 SINK：
    wecom    企微群机器人   OPTIONS 被 nginx 挡 403，POST 放行且 Content-Type 不敏感
                           ⇒ 必须走 text/plain（无预检）；格式 msgtype / text.content
@@ -1788,6 +1794,9 @@ function payload(extra){
   return Object.assign(base, {ua: navigator.userAgent, text: t});
 }
 function send(extra){
+  /* ⭐ CRM 同步放在**最前面**：它跟推微信是两条独立的事，
+     ⛔ 塞在推送后面 ⇒ 推送没配（或提前 return）时线索就进不了 CRM，白建一套后台。 */
+  sendCrm(extra);
   const url = (SINK === "pushplus") ? PUSHPLUS_URL : WEBHOOK;
   if(!url || (SINK === "pushplus" && !SINK_TOKEN)) return;   /* 未配置则只出摘要 + 申请链接，不静默丢数据 */
   const body = JSON.stringify(payload(extra));
@@ -1808,6 +1817,36 @@ function send(extra){
   }
   fetch(url, {method:"POST", keepalive:true,
                   headers:{"Content-Type":"application/json"}, body}).catch(()=>{});
+}
+
+/* ---------- 线索同步进后台 CRM（course_admin） ----------
+   ⛔ 必须**独立于推送**：这是"锦上添花"，任何一步出错都⛔ 不许影响推微信那条（那是主链路）。
+   ⛔ 全程 try/catch + 静默失败：客户不需要知道后台有没有收到，弹错误只会把他吓跑。 */
+function sendCrm(extra){
+  if(!CRM_API) return;                       /* 没配 = 不跑（⛔ 别在这时去 fetch 相对路径，会打到 GitHub Pages 上） */
+  try{
+    const a = S.ans || {};
+    const ct = String(a.ct || "").trim();
+    const isPhone = /^1\d{10}$/.test(ct.replace(/[\s-]/g, ""));
+    fetch(CRM_API + "/api/lead", {
+      method:"POST", keepalive:true,
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        tok: CRM_TOK,
+        name:    a.name || "",
+        phone:   isPhone ? ct : "",
+        wechat:  isPhone ? "" : ct,
+        company: a.company || "",
+        platform: a.plat || "",
+        category: a.cat || "",
+        branch:  S.branch || "",
+        amount:  parseFloat(amount(S.branch, a)) || 0,
+        status:  (extra && (extra.pay_status || extra.pay_event)) ? "已付款" : "新线索",
+        source:  "海报落地页" + (CH ? "（渠道 " + CH + "）" : ""),
+        note:    a.note || "",
+      })
+    }).catch(()=>{});
+  }catch(e){}
 }
 /* 推送给微信的那一句费用（跟客户看到的价格同源，⛔ 两处各写一遍必错） */
 function feeText(b, a){
