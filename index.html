@@ -700,11 +700,18 @@ function options(list, onPick, hint, wide){
   const w = document.createElement("div"); w.className = "opts";
   /* ⭐ 选项多（>5，产品设计七个模块）才切两列 + 限高自滚；四选一那种竖排更好点，
      ⛔ 别无条件写成两列——四选一改成两列反而像标签云。
-     限高是第二道保险：小屏（375×667）上七项单列会占掉半屏，把上面的对话全顶没。 */
-  if(list.length > 5){
+     限高是第二道保险：小屏（375×667）上七项单列会占掉半屏，把上面的对话全顶没。
+     🔴🔴 两列只给**短标签**：集名＋时长二十几个字，两列会被 `.opts.grid .opt` 的
+        ellipsis 截成「EP2 《看得到爆款…」—— 客人连这一集叫什么、多长都看不全，
+        那就等于没得挑（2026-10-25 截图才发现，光看断言是绿的）。 */
+  const longTxt = list.some(t => String(t).length > 12);
+  if(list.length > 5 && !longTxt){
     w.classList.add("grid");
     w.style.display = "grid"; w.style.gridTemplateColumns = "1fr 1fr"; w.style.gap = "8px";
     w.style.maxHeight = "38vh"; w.style.overflowY = "auto";
+  }else if(list.length > 4){
+    /* 长标签 + 多项 ⇒ 单列、允许换行、限高自滚。⛔ 别为了"一屏看全"退回两列。 */
+    w.style.maxHeight = "44vh"; w.style.overflowY = "auto";
   }
   list.forEach(txt=>{
     const b = document.createElement("button"); b.className = "opt";
