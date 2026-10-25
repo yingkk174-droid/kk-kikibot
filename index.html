@@ -353,6 +353,45 @@ const MENTION_HIGH = false; // 仅 wecom：高意向线索（D 分支 + 亿级/�
 const CRM_API = "https://kk-course-admin-production.up.railway.app";   // ⛔ 结尾不要带斜杠
 const CRM_TOK = "17a823ff78eb52659c194655";                            // 与后台 LEAD_TOKEN 一致，改一边必改另一边
 
+/* ⭐ 体验卡：让**客人自己挑一集**（2026-10-25 用户拍板：「既然是体验，一定是客人感兴趣比较好」）。
+   清单从后台取（唯一真源＝后台大纲，含 ffprobe 实测时长），⛔ 别在这抄一份 28 期清单 ——
+   抄了就是两处，改一集忘一处，客人挑到的是过期名字。
+   🔴 进页面就预取：聊到那一步早就有数了；⛔ 别等他点选项时才去拉，转圈那几秒最伤。 */
+let PLANS = null;
+/* 🔴 这个 promise 是给「走到挑一集那题、清单还没回来」兜底用的：等它（最多 3 秒）再决定跳不跳，
+   ⛔ 别让它阻塞开场白 —— 页面一开始就 await 它，慢网的人会盯着一片空白。 */
+let PLANS_READY = Promise.resolve();
+function loadPlans(){
+  if(!CRM_API) return;
+  /* 🔴 6 秒拿不到就当没有：宁可退回「默认那一集」，也⛔ 不让聊天卡在这道题上。 */
+  const timeout = new Promise(r => setTimeout(() => r(null), 6000));
+  PLANS_READY = Promise.race([
+    fetch(CRM_API + "/api/pub/plans").then(r => r.ok ? r.json() : null).catch(() => null),
+    timeout
+  ]).then(d => { if(d && Array.isArray(d.series)) PLANS = d.series; }).catch(()=>{});
+}
+
+/* 某一季的可挑清单；选项整串 = `EP2 《看得到爆款…》 · 15:49`（no 与 title 之间留一个空格）。 */
+function trialList(topic){
+  const s = (PLANS || []).find(x => x.key === topic);
+  return (s && Array.isArray(s.items)) ? s.items : [];
+}
+const trialLabel = it => `${it.no} ${it.title}${it.dur ? " · " + it.dur : ""}`;
+function trialOpts(topic){ return trialList(topic).map(trialLabel); }
+/* 🔴 选回来的是**整串显示文本** ⇒ 必须反查回那一项，⛔ 拿显示串去比对一定查不到
+   （选项里带了时长，存的值却不带，两者永远不相等）。 */
+function trialPick(topic, label){
+  return trialList(topic).find(it => trialLabel(it) === label);
+}
+/* 已选那一集的信息：从清单里按**期号**反查（期号才是稳定键，集名可能改字）。 */
+function trialInfo(a){
+  const no = String(a.trial_ep || "").match(/^[A-Za-z]+\d*/);
+  return no ? trialList(a.topic).find(it => String(it.no).toUpperCase() === no[0].toUpperCase()) : null;
+}
+/* 清单没拉到（接口挂了 / 断网）⇒ ⛔ 别渲染一个空选项列表（点了没反应的按钮比不问更伤），
+   整题跳过，AFTER.B 会退回 TRACK 那一集。 */
+function skipQ(q){ return q.k === "trial_ep" && trialOpts(S.ans.topic).length === 0; }
+
 /* 🔴 各接收端的差异不是"换 URL"，是"换协议"，别只改 URL 不改 SINK：
    wecom    企微群机器人   OPTIONS 被 nginx 挡 403，POST 放行且 Content-Type 不敏感
                           ⇒ 必须走 text/plain（无预检）；格式 msgtype / text.content
@@ -387,7 +426,15 @@ const EXT = {
      ② ⛔ 只让选 1 个 —— 多选会稀释"他最想看什么"，线索就失去排序依据。 */
   B: [{k:"role",  t:"你的角色是？", type:"opt", opt:["老板","运营负责人","一线运营","其他"]},
       {k:"topic", t:"想先看哪个课题？选一个就行。", type:"opt", opt:["运营","经营","战略","品牌"],
-                  hint:"四个课题各是一季，先挑最对胃口的那个看"}],
+                  hint:"四个课题各是一季，先挑最对胃口的那个看"},
+      /* ⭐ 第三问＝**让客人自己挑一集**（2026-10-25 用户拍板）：
+         以前是「选运营 ⇒ 固定发 EP1」，客人没得选；体验这件事，**他感兴趣的那一集才最有效**。
+         🔴 选项从后台大纲拉（唯一真源，时长是实测值）⇒ 客户看到的和后台开的是同一个东西。
+         ⛔ 值存成 `EP2《…》`：后台 `_ep_of()` 只认开头字母+数字，跟 TRACK 老格式完全一致。 */
+      {k:"trial_ep", t:a=>`${a.topic || "这一季"}挑一集，你最想先看哪个？`,
+                  type:"opt", opt:a=>trialOpts(a.topic),
+                  hint:"买了就开这一集 —— 挑你眼下最卡的那件事，别挑听起来最厉害的那个",
+                  fmt:(v,a)=>{ const it = trialPick(a.topic, v); return it ? `${it.no}${it.title}` : v; }}],
   /* ⭐ C 由「AI Agent 体验」改为「线下共创营」（2026-10-20 定），Agent 另开 E 分支。
      共创营问「带几个人 / 现场想解决什么」＝席位数，正是后面排期与报价要用的两个字段。 */
   C: [{k:"seat",  t:"大概会带几位同事一起来？", type:"opt", opt:["就我一个","2–3 位","4 位以上","还没定"]},
@@ -415,13 +462,15 @@ const EXT = {
    改管理模式时新增 key 必须同步这里，否则菜单上会出现英文键名（row 是从 queue 自动堆出来的）。 */
 const LABEL = {
   name:"称呼", plat:"平台", cat:"品类", ct:"联系方式",
-  url:"链接", block:"卡在哪", role:"角色", topic:"课题",
+  url:"链接", block:"卡在哪", role:"角色", topic:"课题", trial_ep:"先看哪一集",
   seat:"同行人数", want:"想解决的事", scale:"体量", sys:"选哪套 Agent", scene:"先试哪一块"
 };
 /* ⭐ 单向依赖：改了前一项，后一项的选项整组就变了 ⇒ 必须跟着一起重问，且旧答案要清掉。
    ⛔ 只清 scene 不重问：复述卡上会留一个"上一套系统的模块"，按它发的码是错的。
    目前只有 E（选了"AI 产品设计"→ 换成"AI 跨境电商"，模块清单完全不同）。 */
-const DEP = { sys: ["scene"] };
+/* ⭐ 加了 topic ⇒ trial_ep：换了课题，可挑的集**整组都换了**，
+   留着上一季的集名 ⇒ 复述卡上写着「课题：品牌 / 先看哪一集：EP1」，开出来的不是他要的那一集。 */
+const DEP = { sys: ["scene"], topic: ["trial_ep"] };
 const BRANCH_NAME = {A:"链接诊断", B:"课程试听", C:"线下共创营", D:"咨询预约", E:"AI Agent 体验"};
 
 /* ⭐ 课题 → 试听集（2026-10-20 定，规格见 B试听_交付规格/B1_课题试听清单.md）
@@ -868,6 +917,16 @@ function pickBranch(code){
 
 /* S2 收集 */
 async function nextQ(){
+  /* ⭐ 清单是**异步**拉的：万一走到「挑一集」这题时它还没回来 ⇒ 等它一会儿（最多 3 秒）。
+     ⛔ 别直接整题跳过 —— 让客人挑就是这题的全部意义（2026-10-25 拍板），
+        跳过去等于又回到「选课题 ⇒ 固定发第一集」的老口径。
+        等 3 秒而不是立刻跳过：正常情况清单早就回来了，这里一行都不等。 */
+  if(S.i < S.queue.length && S.queue[S.i].k === "trial_ep" && trialOpts(S.ans.topic).length === 0){
+    await Promise.race([PLANS_READY, new Promise(r => setTimeout(r, 3000))]);
+  }
+  /* ⭐ 动态跳过：等完还是空的（接口挂了 / 断网）⇒ 别渲染一个空选项列表（见 skipQ）。
+     ⛔ while 不是 if：连续两题都要跳的话，if 只会跳掉第一题。 */
+  while(S.i < S.queue.length && skipQ(S.queue[S.i])) S.i++;
   if(S.i >= S.queue.length){ return confirm_(); }
   await typing(420);
   /* ⭐ 每答完一题就落盘（i 已递增）：中途跳出的人回来从**下一题**接着答，六题不再白答 */
@@ -885,7 +944,10 @@ async function askOne(q, onAns){
   if(t) say(t);
   S.stage = "s2";
   if(ty === "opt"){
-    options(ev(q.opt, []), v=>{ S.ans[q.k] = v; clearBar(); onAns(); }, ev(q.hint, ""));
+    /* ⭐ fmt：显示串 ≠ 要存的值时用（体验卡那题的选项是「期号 集名 · 时长」，
+       要存的是「EP2《…》」）。⛔ 不转换的话，存进线索里的是带时长的一长串，
+       后台按它开通就永远匹配不上。 */
+    options(ev(q.opt, []), v=>{ S.ans[q.k] = q.fmt ? q.fmt(v, S.ans) : v; clearBar(); onAns(); }, ev(q.hint, ""));
   }else{
     askText(q.ph || "输入…", v=>{ S.ans[q.k] = v; onAns(); });
   }
@@ -903,6 +965,9 @@ function recapRows(a, b){
   /* ⭐ B 选的课题必须上复述卡：这是这一条线索的路由依据，
      卡片上不显示，客户只能凭印象点"对"，我们这边也就少了排序信息。 */
   if(a.topic) detail.push("课题「" + a.topic + "」");
+  /* ⭐ 他挑的那一集必须上复述卡：这一条线索的**交付物**就是它，
+     卡片上看不见 ⇒ 他只能凭印象点"对，没问题"，开错了两边都说不清。 */
+  if(a.trial_ep) detail.push("先看 " + a.trial_ep);
   /* ⭐ E 选的是哪一套系统必须上复述卡：额度、站点、发哪个码全挂在它上面 */
   if(a.sys)   detail.push(a.sys);
   if(a.scene) detail.push(a.scene);
@@ -1018,7 +1083,7 @@ async function fixOne(k){
        在 S.queue 里 find ⇒ 找不到 ⇒ step() 静默跳过 ⇒ 菜单点了没反应。 */
     const q = allQ().find(x => x.k === chain[i]);
     i++;
-    if(!q) return step();
+    if(!q || skipQ(q)) return step();     /* ⛔ 改课题连带出来的选集题，清单没拉到一样要跳 */
     askOne(q, ()=>{ setTimeout(step, 280); });
   };
   await typing(360);
@@ -1040,13 +1105,18 @@ const AFTER = {
         也不知道这一集跟他刚选的课题是什么关系。 */
   /* ⭐ AFTER 的函数统一收 S.ans（原来 B 只收 topic）：E 要按所选系统说话，只给一个字段不够用 */
   B: function(a){
-    const k = TRACK[a.topic];
-    if(!k) return "体验卡的入口在上面，选你感兴趣的课题就行。看完有具体问题可以直接问我。";
+    /* ⭐ 客人自己挑的那一集（2026-10-25 用户拍板）：`a.trial_ep` 是他点的，不是我们替他定的。
+       🔴 分钟数取清单里的**实测**时长（"15:49" ⇒ 15）；只有清单没拉到时才退回 TRACK 那份手抄值
+       —— 那份是 2026-10-20 抄的，EP1 抄成 14，实测 15:42，⛔ 别把它当真值用。 */
+    const it  = trialInfo(a);
+    const ep  = a.trial_ep || ((TRACK[a.topic] || {}).ep || "");
+    const min = it ? String(parseInt(it.dur, 10)) : ((TRACK[a.topic] || {}).min || "");
+    if(!ep) return "体验卡的入口在上面，选你感兴趣的课题就行。看完有具体问题可以直接问我。";
     /* ⭐ 交付＝**开通学员端账号**（不是"微信发你文件"）：2026-10-25 用户拍板 ——
        买的是体验卡，付完 1 个工作日内开通账号、把登录码和这一集一起发他，他自己回来登录就能看。
        ⛔ 别再写"发文件 / 发链接"：那是人工动作，客户等着一个落点不确定的东西；
           而"开通账号 + 发码"有明确落点（学员端登录页是同一句口径，改一边必改另一边）。 */
-    return `给你开通学员端账号，<b>${k.ep}</b> 那一集（约 ${k.min} 分钟）一并开好，${sla("B")}把登录码发你。`
+    return `给你开通学员端账号，<b>${esc(ep)}</b> 那一集${min ? `（约 ${min} 分钟）` : ""}一并开好，${sla("B")}把登录码发你。`
          + `<br>拿到码回来登录就能看：先看讲法对不对胃口，合适再聊后面的。`;
   },
   /* ⭐ C = 线下共创营（2026-10-20 定，原 C 是 Agent 体验，已拆到 E） */
@@ -1708,7 +1778,9 @@ function payload(extra){
     channel: CH, branch: S.branch, branch_name: BRANCH_NAME[S.branch], intent: hi ? "high" : "normal",
     name: a.name, plat: a.plat, cat: a.cat, contact: a.ct,
     scale: a.scale, stage: a.stage, block: a.block, role: a.role, want: a.want,
-    topic: a.topic, trial_ep: (TRACK[a.topic] || {}).ep || "",
+    /* ⭐ trial_ep = **客人自己挑的**那一集（⛔ 退回 TRACK 的固定集是兜底，不是默认路径：
+       选了运营就固定发 EP1 那是 2026-10-20 的老口径，现在由他挑）。 */
+    topic: a.topic, trial_ep: a.trial_ep || ((TRACK[a.topic] || {}).ep || ""),
     seat: a.seat, scene: a.scene, now: a.now, amount: amt,
     /* ⭐ 客户在确认那一步手打的那句话（多半是"电话写错了"这类）。
        ⛔ 记了就必须发出去：吞掉一句客户主动说的话，比不问还糟（他以为你看到了。⇒ 复述卡也显示）。 */
@@ -1872,7 +1944,7 @@ function summary(){
     "平台 / 品类：" + (a.plat || "-") + " / " + (a.cat || "-"),
     "联系方式：" + (a.ct || "-"),
     S.branch === "A" ? "链接：" + (a.url || "-") + "\n卡点：" + (a.block || "-") :
-    S.branch === "B" ? "角色：" + (a.role || "-") + "\n课题：" + (a.topic || "-") + "（体验卡 " + ((TRACK[a.topic] || {}).ep || "待定") + "）" :
+    S.branch === "B" ? "角色：" + (a.role || "-") + "\n课题：" + (a.topic || "-") + "（体验卡 " + (a.trial_ep || ((TRACK[a.topic] || {}).ep || "待定")) + "）" :
     S.branch === "C" ? "席位：" + (a.seat || "-") + "\n想解决：" + (a.want || "-") :
     S.branch === "E" ? "系统：" + (a.sys || "-") + "\n想跑：" + (a.scene || "-")
                        + "\n额度：" + ((AGENT[a.sys] || {}).quota || "-") :
@@ -1889,6 +1961,7 @@ function copy(t){
 }
 function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
+loadPlans();   /* ⭐ 进页面就预取体验卡清单（后台大纲），聊到"挑一集"那步时早就有数了 */
 s0();
 </script>
 </body>
