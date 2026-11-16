@@ -1668,6 +1668,7 @@ async function deliver(replay){
   box.appendChild(d); chat.appendChild(box); scroll();
 
   d.querySelector("#cp").onclick = ()=>{ copy(summary()); toast("已复制，可直接发给顾问"); };
+  if(window.__pushFail) markPushFail();     /* 推送失败早于 S4 渲染 ⇒ 这里补标 */
 
   await typing(400);
   /* ⛔ **同一分支内**只许出现一个时效落点：D 上面刚承诺过"3 个工作日内电话联系"，
@@ -1902,7 +1903,23 @@ function send(extra){
     return;
   }
   fetch(url, {method:"POST", keepalive:true,
-                  headers:{"Content-Type":"application/json"}, body}).catch(()=>{});
+                  headers:{"Content-Type":"application/json"}, body})
+    .then(r => r.json())
+    .then(j => { if(!j || String(j.code) !== "200") markPushFail(); })
+    .catch(() => markPushFail());
+}
+
+/* 🔴 直连保留，但推送失败不许静默（2026-11-16）：pushplus 会用 HTTP 200 回 code:999
+   （重复内容去重），网络失败走 .catch。旧版 .catch(()=>{}) 两种都吞掉 ⇒ 微信没消息、
+   页面还显示「已登记」。⇒ 只点亮已有的「复制我的信息」按钮：⛔ 不弹错误吓客户、
+   ⛔ 不新增对话消息、⛔ 不改推送参数。线索已在 send() 第一句进 CRM，这里只补人工兜底入口。 */
+function markPushFail(){
+  window.__pushFail = true;
+  const cp = document.getElementById("cp");
+  if(!cp || cp.dataset.pushWarn) return;      /* S4 还没渲染 ⇒ 等它建按钮时再标 */
+  cp.dataset.pushWarn = "1";
+  cp.textContent = "复制我的信息（消息可能没送达，点我）";
+  cp.style.borderColor = "#e5533d";
 }
 
 /* ---------- 线索同步进后台 CRM（course_admin） ----------
